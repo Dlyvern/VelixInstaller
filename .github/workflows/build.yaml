@@ -28,6 +28,10 @@ jobs:
       - name: Print Qt install directory
         shell: powershell
         run: echo $env:QT_INSTALL_DIR
+
+      - name: Print environment variables
+        shell: powershell
+        run: Get-ChildItem Env:
         
       - name: Configure CMake
         shell: powershell
