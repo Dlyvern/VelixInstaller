@@ -15,7 +15,7 @@ set(LIBRARIES_DIR libraries)
 file(GLOB_RECURSE PROJECT_HEADERS  ${INCLUDE_DIR}/*.h ${INCLUDE_DIR}/*.hpp)
 file(GLOB_RECURSE PROJECT_SOURCES ${SRC_DIR}/*.cpp)
 
-find_package(Qt5 COMPONENTS Widgets REQUIRED)
+find_package(Qt6 COMPONENTS Widgets REQUIRED)
 
 add_executable(${PROJECT_NAME}
         ${PROJECT_SOURCES}
@@ -26,7 +26,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
         ${INCLUDE_DIR}
 )
 
-target_link_libraries(${PROJECT_NAME} PRIVATE Qt5::Widgets)
+target_link_libraries(${PROJECT_NAME} PRIVATE Qt6::Widgets)
 
 if(UNIX AND NOT APPLE)
     find_package(Threads REQUIRED)
