@@ -12,45 +12,43 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-    
 
-    - name: Setup Qt (using MSYS2 for example)
-      uses: jurplel/install-qt-action@v2
-      with:
-        version: '6.5.1'
-        host: 'windows'
-        arch: 'win64_msvc2019_64'
+      - name: Setup Qt (using MSYS2 for example)
+        uses: jurplel/install-qt-action@v2
+        with:
+          version: '6.5.1'
+          host: 'windows'
+          arch: 'win64_msvc2019_64'
 
-    - name: Configure CMake
-      run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+      - name: Configure CMake
+        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64
 
-    - name: Build
-      run: cmake --build build --config Release
+      - name: Build
+        run: cmake --build build --config Release
 
-    - name: Upload Windows executable
-      uses: actions/upload-artifact@v3
-      with:
-        name: VelixInstall-windows
-        path: build/Release/VelixInstall.exe
+      - name: Upload Windows executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: VelixInstall-windows
+          path: build/Release/VelixInstall.exe
 
   build-linux:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-    - name: Install Qt (Ubuntu)
-      run: sudo apt-get update && sudo apt-get install -y qtbase5-dev qtchooser qt5-qmake qtbase5-dev-tools
+      - name: Install Qt (Ubuntu)
+        run: sudo apt-get update && sudo apt-get install -y qtbase5-dev qtchooser qt5-qmake qtbase5-dev-tools
 
-    - name: Configure CMake
-      run: cmake -S . -B build
+      - name: Configure CMake
+        run: cmake -S . -B build
 
-    - name: Build
-      run: cmake --build build --config Release
+      - name: Build
+        run: cmake --build build --config Release
 
-    - name: Upload Linux executable
-      uses: actions/upload-artifact@v3
-      with:
-        name: VelixInstall-linux
-        path: build/VelixInstall
+      - name: Upload Linux executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: VelixInstall-linux
+          path: build/VelixInstall
