@@ -39,7 +39,9 @@ jobs:
       - name: Deploy Qt dependencies with windeployqt
         shell: powershell
         run: |
-          & "$env:QT_INSTALL_DIR\bin\windeployqt.exe" build\Release\VelixInstall.exe
+          $windeployqt = Join-Path $env:QT_INSTALL_DIR 'bin\windeployqt.exe'
+          Write-Host "windeployqt path: $windeployqt"
+          & $windeployqt build\Release\VelixInstall.exe
 
       - name: Upload Windows executable and dependencies
         uses: actions/upload-artifact@v4
