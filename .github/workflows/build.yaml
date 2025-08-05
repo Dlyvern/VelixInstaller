@@ -13,13 +13,18 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Qt (using MSYS2 for example)
-        uses: jurplel/install-qt-action@v2
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+
+      - name: Setup Qt (MSVC 2019 64-bit)
+        uses: jurplel/install-qt-action@v3
         with:
           version: '6.5.1'
           host: 'windows'
           arch: 'win64_msvc2019_64'
-
+        
       - name: Configure CMake
         run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64
 
