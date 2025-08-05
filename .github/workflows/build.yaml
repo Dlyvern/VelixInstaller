@@ -9,9 +9,10 @@ on:
 jobs:
   build-windows:
     runs-on: windows-latest
-
     steps:
-    - uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v4
+    
 
     - name: Setup Qt (using MSYS2 for example)
       uses: jurplel/install-qt-action@v2
@@ -36,7 +37,8 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v4
 
     - name: Install Qt (Ubuntu)
       run: sudo apt-get update && sudo apt-get install -y qtbase5-dev qtchooser qt5-qmake qtbase5-dev-tools
