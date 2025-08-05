@@ -40,12 +40,11 @@ jobs:
       - name: Build
         run: cmake --build build --config Release
 
-      - name: Deploy Qt dependencies with windeployqt
+      - name: Deploy Qt dependencies
         shell: powershell
         run: |
-          $windeployqt = Join-Path $env:QT_INSTALL_DIR 'bin\windeployqt.exe'
-          Write-Host "windeployqt path: $windeployqt"
-          & $windeployqt build\Release\VelixInstall.exe
+          $qtBinPath = Join-Path $env:Qt6_DIR 'bin\windeployqt.exe'
+          & $qtBinPath build\Release\VelixInstall.exe
 
       - name: Upload Windows executable and dependencies
         uses: actions/upload-artifact@v4
