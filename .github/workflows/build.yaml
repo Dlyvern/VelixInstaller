@@ -36,11 +36,16 @@ jobs:
       - name: Build
         run: cmake --build build --config Release
 
-      - name: Upload Windows executable
+      - name: Deploy Qt dependencies with windeployqt
+        shell: powershell
+        run: |
+          & "$env:QT_INSTALL_DIR\bin\windeployqt.exe" build\Release\VelixInstall.exe
+
+      - name: Upload Windows executable and dependencies
         uses: actions/upload-artifact@v4
         with:
           name: VelixInstall-windows
-          path: build/Release/VelixInstall.exe
+          path: build/Release/
 
   build-linux:
     runs-on: ubuntu-latest
