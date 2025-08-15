@@ -15,7 +15,7 @@ set(LIBRARIES_DIR libraries)
 file(GLOB_RECURSE PROJECT_HEADERS  ${INCLUDE_DIR}/*.h ${INCLUDE_DIR}/*.hpp)
 file(GLOB_RECURSE PROJECT_SOURCES ${SRC_DIR}/*.cpp)
 
-find_package(Qt6 COMPONENTS Widgets REQUIRED)
+find_package(Qt6 COMPONENTS Widgets Network REQUIRED)
 
 add_executable(${PROJECT_NAME}
         ${PROJECT_SOURCES}
@@ -26,7 +26,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
         ${INCLUDE_DIR}
 )
 
-target_link_libraries(${PROJECT_NAME} PRIVATE Qt6::Widgets)
+target_link_libraries(${PROJECT_NAME} PRIVATE Qt6::Widgets Qt6::Network) 
 
 if(UNIX AND NOT APPLE)
     find_package(Threads REQUIRED)
@@ -38,3 +38,15 @@ if(WIN32)
         WIN32_EXECUTABLE TRUE
     )
 endif()
+
+
+add_custom_command(
+    TARGET ${PROJECT_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+    ${CMAKE_SOURCE_DIR}/resources
+    ${CMAKE_BINARY_DIR}/resources
+)
+
+
+install(TARGETS ${PROJECT_NAME} DESTINATION .)
+install(DIRECTORY resources DESTINATION .)
