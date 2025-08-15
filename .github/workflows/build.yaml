@@ -25,14 +25,6 @@ jobs:
           host: 'windows'
           arch: 'win64_msvc2019_64'
 
-      - name: Print Qt install directory
-        shell: powershell
-        run: echo $env:QT_INSTALL_DIR
-
-      - name: Print environment variables
-        shell: powershell
-        run: "Get-ChildItem Env:"
-
       - name: Configure CMake
         shell: powershell
         run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_PREFIX_PATH="$env:QT_INSTALL_DIR/lib/cmake"
@@ -40,11 +32,16 @@ jobs:
       - name: Build
         run: cmake --build build --config Release
 
+      - name: Copy resources folder
+        shell: powershell
+        run: |
+          Copy-Item -Recurse -Force resources build/Release/resources
+
       - name: Deploy Qt dependencies
         shell: powershell
         run: |
           $qtBinPath = Join-Path $env:Qt6_DIR 'bin\windeployqt.exe'
-          & $qtBinPath build\Release\VelixInstall.exe
+          & $qtBinPath build/Release/VelixInstall.exe
 
       - name: Upload Windows executable and dependencies
         uses: actions/upload-artifact@v4
@@ -61,7 +58,7 @@ jobs:
       - name: Install Qt6
         run: |
           sudo apt-get update
-          sudo apt-get install -y qt6-base-dev qt6-base-dev-tools qt6-tools-dev qt6-tools-dev-tools
+          sudo apt-get install -y qt6-base-dev qt6-base-dev-tools qt6-tools-dev qt6-tools-dev-tools wget
 
       - name: Configure CMake
         run: cmake -S . -B build -DCMAKE_PREFIX_PATH=/usr/lib/x86_64-linux-gnu/cmake/Qt6
@@ -69,8 +66,20 @@ jobs:
       - name: Build
         run: cmake --build build --config Release
 
-      - name: Upload Linux executable
+      - name: Prepare folder for AppImage
+        run: |
+          mkdir -p build/package/usr/bin
+          cp build/VelixInstall build/package/usr/bin/
+          cp -r resources build/package/usr/bin/
+
+      - name: Bundle Qt runtime
+        run: |
+          wget https://github.com/probonopd/linuxdeployqt/releases/download/continuous/linuxdeployqt-continuous-x86_64.AppImage
+          chmod +x linuxdeployqt-continuous-x86_64.AppImage
+          ./linuxdeployqt-continuous-x86_64.AppImage build/package/usr/bin/VelixInstall -appimage
+
+      - name: Upload Linux AppImage
         uses: actions/upload-artifact@v4
         with:
           name: VelixInstall-linux
-          path: build/VelixInstall
+          path: *.AppImage
