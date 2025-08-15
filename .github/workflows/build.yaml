@@ -50,7 +50,7 @@ jobs:
           path: build/Release/
 
   build-linux:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
