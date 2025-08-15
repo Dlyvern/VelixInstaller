@@ -77,6 +77,8 @@ jobs:
           wget https://github.com/probonopd/linuxdeployqt/releases/download/continuous/linuxdeployqt-continuous-x86_64.AppImage
           chmod +x linuxdeployqt-continuous-x86_64.AppImage
           ./linuxdeployqt-continuous-x86_64.AppImage build/package/usr/bin/VelixInstall -appimage
+      - name: Install FUSE
+        run: sudo apt-get update && sudo apt-get install -y fuse libfuse2
 
       - name: Upload Linux AppImage
         uses: actions/upload-artifact@v4
