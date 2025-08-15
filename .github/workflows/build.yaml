@@ -50,7 +50,7 @@ jobs:
           path: build/Release/
 
   build-linux:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -71,14 +71,21 @@ jobs:
           mkdir -p build/package/bin
           cp build/VelixInstall build/package/bin/
           cp -r resources build/package/bin/
-          # Copy required Qt libraries
+          # Copy Qt libraries
           cp /usr/lib/x86_64-linux-gnu/libQt6Core.so.6 build/package/bin/
           cp /usr/lib/x86_64-linux-gnu/libQt6Gui.so.6 build/package/bin/
           cp /usr/lib/x86_64-linux-gnu/libQt6Widgets.so.6 build/package/bin/
           cp /usr/lib/x86_64-linux-gnu/libQt6Svg.so.6 build/package/bin/
           cp /usr/lib/x86_64-linux-gnu/libQt6DBus.so.6 build/package/bin/
           cp /usr/lib/x86_64-linux-gnu/libQt6Network.so.6 build/package/bin/
-        
+
+          # Create a wrapper script to run the binary
+          echo '#!/bin/bash' > build/package/bin/run.sh
+          echo 'DIR="$(dirname "$0")"' >> build/package/bin/run.sh
+          echo 'export LD_LIBRARY_PATH="$DIR"' >> build/package/bin/run.sh
+          echo '"$DIR/VelixInstall"' >> build/package/bin/run.sh
+          chmod +x build/package/bin/run.sh
+
       - name: Upload Linux artifact
         uses: actions/upload-artifact@v4
         with:
