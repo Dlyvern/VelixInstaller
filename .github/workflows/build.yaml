@@ -59,16 +59,14 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-          qt6-base-dev \
-          qt6-base-dev-tools \
-          qt6-declarative-dev \
-          qt6-tools-dev \
-          qt6-tools-dev-tools \
-          qt6-svg-dev \
-          qt6-imageformats-dev \
-          qt6-wayland-dev \
-          qt6-x11extras-dev
-          
+            qt6-base-dev \
+            qt6-base-dev-tools \
+            qt6-declarative-dev \
+            qt6-tools-dev \
+            qt6-tools-dev-tools \
+            libqt6svg6-dev \
+            libqt6x11extras6-dev
+
       - name: Configure CMake
         run: cmake -S . -B build -DCMAKE_PREFIX_PATH=/usr/lib/x86_64-linux-gnu/cmake/Qt6
 
