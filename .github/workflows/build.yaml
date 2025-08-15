@@ -82,4 +82,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: VelixInstall-linux
-          path: *.AppImage
+          path: build/package/usr/bin/VelixInstall.AppImage
