@@ -8,6 +8,9 @@ set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 
+set(CMAKE_INSTALL_RPATH "$ORIGIN")
+set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
+
 set(INCLUDE_DIR include)
 set(SRC_DIR src)
 set(LIBRARIES_DIR libraries)
@@ -24,6 +27,7 @@ add_executable(${PROJECT_NAME}
 
 target_include_directories(${PROJECT_NAME} PRIVATE
         ${INCLUDE_DIR}
+        ${LIBRARIES_DIR}
 )
 
 target_link_libraries(${PROJECT_NAME} PRIVATE Qt6::Widgets Qt6::Network) 

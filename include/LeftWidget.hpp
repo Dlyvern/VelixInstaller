@@ -19,6 +19,9 @@ private:
     void addTab(const QString& tabName, const QString& iconPath, QWidget* parent = nullptr);
 
     QVBoxLayout* m_mainLayout{nullptr};
+
+signals:
+    void tabWidgetChanged(const QString& tabName);
 };
 
 

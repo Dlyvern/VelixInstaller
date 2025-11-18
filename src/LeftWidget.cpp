@@ -28,27 +28,29 @@ LeftWidget::LeftWidget(QWidget* parent) : QWidget(parent)
 
     m_mainLayout->addWidget(iconLabel, 0, Qt::AlignCenter);
 
-
     addTab("Projects", "./resources/folder.png", this);
     addTab("Documentation", "./resources/document.png", this);
     addTab("Settings", "./resources/setting.png", this);
+    addTab("Installs", "./resources/installs.png", this);
 
     m_tabs.first()->setActive(true);
 
     m_mainLayout->addStretch(10);
 }
 
-
 void LeftWidget::addTab(const QString& tabName, const QString& iconPath, QWidget* parent)
 {
     auto tab = new TabWidget(tabName, iconPath, parent);
 
-    connect(tab, &TabWidget::clicked, this, [this, tab]
+    connect(tab, &TabWidget::clicked, this, [this, tab, tabName]
     {
         for(auto* tb : m_tabs)
             tb->setActive(false);
 
         tab->setActive(true);
+
+        //TODO REFACTOR THIS PIECE OF SHIT
+        emit tabWidgetChanged(tabName);
     });
 
     m_tabs.push_back(tab);

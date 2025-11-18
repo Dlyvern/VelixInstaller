@@ -24,9 +24,6 @@ protected:
     bool m_isActive{false};
 
     int m_cornerRadius{10};
-
-
-
 private:
     QLabel* m_labelIcon{nullptr};
     QPixmap m_originalPixMap;
