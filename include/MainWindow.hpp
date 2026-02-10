@@ -2,9 +2,6 @@
 #define MAIN_WINDOW_HPP
 
 #include <QMainWindow>
-
-#include "MainWidget.hpp"
-#include "LeftWidget.hpp"
 #include <QPainter>
 #include <QLinearGradient>
 
@@ -20,8 +17,6 @@ protected:
     void paintEvent(QPaintEvent*) override;
 
 private:
-    MainWidget* m_mainWidget{nullptr};
-    LeftWidget* m_leftWidget{nullptr};
 };
 
 

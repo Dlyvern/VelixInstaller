@@ -1,0 +1,7 @@
+{
+ "scene": "./default_scene.scene",
+ "path": "./",
+ "resources_path": "./Resources",
+ "sources_path": "./Sources",
+ "name": "TestProject"
+}

@@ -1,0 +1,83 @@
+{
+    "game_objects": [
+        {
+            "components": null,
+            "name": "cube",
+            "position": [
+                0.0,
+                1.5,
+                0.0
+            ],
+            "rotation": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "scale": [
+                1.0,
+                1.0,
+                1.0
+            ]
+        },
+        {
+            "components": [
+                {
+                    "color": [
+                        1.0,
+                        1.0,
+                        1.0
+                    ],
+                    "direction": [
+                        -0.5,
+                        -1.0,
+                        -0.30000001192092896
+                    ],
+                    "light_type": "directional",
+                    "position": [
+                        1.0,
+                        1.0,
+                        1.0
+                    ],
+                    "strength": 1.0,
+                    "type": "light"
+                }
+            ],
+            "name": "directional light",
+            "position": [
+                0.0,
+                10.0,
+                0.0
+            ],
+            "rotation": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "scale": [
+                1.0,
+                1.0,
+                1.0
+            ]
+        },
+        {
+            "components": null,
+            "name": "plane",
+            "position": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "rotation": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "scale": [
+                10.0,
+                0.20000000298023224,
+                10.0
+            ]
+        }
+    ],
+    "name": "default_scene.scene"
+}
