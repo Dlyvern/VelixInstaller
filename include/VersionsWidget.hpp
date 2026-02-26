@@ -4,6 +4,7 @@
 #include <QWidget>
 #include <QVBoxLayout>
 #include <QVector>
+#include <QHash>
 
 #include "VersionWidget.hpp"
 
@@ -19,10 +20,12 @@ public:
 
 signals:
     void installVersion(const QString& tagName, const QString& downloadLink);
-    void launchVersion(const QString& tagName);
+    void chooseVersion(const QString& tagName);
 
 public slots:
     void addNewVersion(const QString& tagName, const QString& downloadLink, bool isInstalled);
+    void setCurrentVersionTag(const QString& tagName);
+    void setVersionInstalled(const QString& tagName, bool isInstalled);
 
 private slots:
     void handleVersionClicked(VersionWidget* widget);
@@ -30,6 +33,7 @@ private slots:
 private:
     QVBoxLayout* m_mainLayout{nullptr};
     QVector<VersionWidget*> m_versionWidgets;
+    QHash<QString, VersionWidget*> m_versionsByTag;
     VersionWidget* m_currentSelected{nullptr};
 };
 

@@ -18,16 +18,16 @@ jobs:
         with:
           python-version: '3.x'
 
-      - name: Setup Qt (MSVC 2019 64-bit)
+      - name: Setup Qt (MSVC 2022 64-bit)
         uses: jurplel/install-qt-action@v3
         with:
           version: '6.5.1'
           host: 'windows'
-          arch: 'win64_msvc2019_64'
+          arch: 'win64_msvc2022_64'
 
       - name: Configure CMake
         shell: powershell
-        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_PREFIX_PATH="$env:QT_INSTALL_DIR/lib/cmake"
+        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_PREFIX_PATH="$env:QT_INSTALL_DIR"
 
       - name: Build
         run: cmake --build build --config Release
@@ -40,8 +40,12 @@ jobs:
       - name: Deploy Qt dependencies
         shell: powershell
         run: |
-          $qtBinPath = Join-Path $env:Qt6_DIR 'bin\windeployqt.exe'
-          & $qtBinPath build/Release/VelixInstall.exe
+          $windeployqt = Join-Path $env:QT_INSTALL_DIR 'bin\windeployqt.exe'
+          if (!(Test-Path $windeployqt)) {
+            $windeployqt = (Get-Command windeployqt.exe -ErrorAction Stop).Source
+          }
+
+          & $windeployqt --release --compiler-runtime build/Release/VelixInstall.exe
 
       - name: Upload Windows executable and dependencies
         uses: actions/upload-artifact@v4
@@ -91,3 +95,70 @@ jobs:
         with:
           name: VelixInstall-linux
           path: build/package/bin/
+
+  build-linux-appimage:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            qt6-base-dev qt6-base-dev-tools qt6-tools-dev-tools \
+            wget file desktop-file-utils patchelf fuse3
+
+      - name: Configure CMake
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=/usr/lib/x86_64-linux-gnu/cmake/Qt6
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Prepare AppDir
+        run: |
+          rm -rf AppDir
+          mkdir -p AppDir/usr/bin
+          mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
+
+          cp build/VelixInstall AppDir/usr/bin/VelixInstall
+          cp -r resources AppDir/usr/bin/resources
+          cp resources/VelixFire.png AppDir/usr/share/icons/hicolor/256x256/apps/velixinstall.png
+
+          cat > AppDir/VelixInstall.desktop << 'EOF'
+          [Desktop Entry]
+          Type=Application
+          Name=VelixInstall
+          Exec=VelixInstall
+          Icon=velixinstall
+          Categories=Development;
+          EOF
+
+      - name: Build AppImage
+        run: |
+          wget -nv -O linuxdeploy-x86_64.AppImage https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          wget -nv -O linuxdeploy-plugin-qt-x86_64.AppImage https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
+          chmod +x linuxdeploy-x86_64.AppImage linuxdeploy-plugin-qt-x86_64.AppImage
+
+          if command -v qmake6 >/dev/null 2>&1; then
+            export QMAKE="$(command -v qmake6)"
+          elif command -v qmake >/dev/null 2>&1; then
+            export QMAKE="$(command -v qmake)"
+          else
+            echo "qmake not found" >&2
+            exit 1
+          fi
+
+          export VERSION="${GITHUB_SHA::7}"
+          ./linuxdeploy-x86_64.AppImage \
+            --appdir AppDir \
+            --desktop-file AppDir/VelixInstall.desktop \
+            --icon-file AppDir/usr/share/icons/hicolor/256x256/apps/velixinstall.png \
+            --plugin qt \
+            --output appimage
+
+      - name: Upload AppImage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: VelixInstall-appimage
+          path: ./*.AppImage

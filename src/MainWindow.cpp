@@ -1,72 +1,38 @@
 #include "MainWindow.hpp"
-#include <QNetworkReply>
-#include <QNetworkRequest>
-#include <QJsonDocument>
-#include <QJsonObject>
-#include <QJsonArray>
-#include <QFile>
-#include <QDebug>
-#include <QLabel>
-#include <QNetworkAccessManager>
-#include <QRandomGenerator>
-
 #include <QHBoxLayout>
 
 #include "Separator.hpp"
 
 MainWindow::MainWindow(QWidget* widget) : QMainWindow(widget)
 {
-    // auto *manager = new QNetworkAccessManager(this);
-
-    // QUrl url("https://github.com/Dlyvern/Velix/releases/download/0.0.0/Velix-linux.zip");
-    // QNetworkRequest request(url);
-    // QNetworkReply *reply = manager->get(request);
-
-    // QObject::connect(reply, &QNetworkReply::downloadProgress, this,
-    //     [](qint64 bytesReceived, qint64 bytesTotal) {
-    //         qDebug() << "Progress:" << bytesReceived << "/" << bytesTotal;
-    //     }
-    // );
-
-    // QObject::connect(reply, &QNetworkReply::finished, this, [reply]() {
-    //     if (reply->error() != QNetworkReply::NoError) {
-    //         qDebug() << "Download error:" << reply->errorString();
-    //     } else {
-    //         QFile file("Velix-linux.zip");
-    //         if (file.open(QIODevice::WriteOnly)) {
-    //             file.write(reply->readAll());
-    //             file.close();
-    //             qDebug() << "File downloaded to Velix-linux.zip";
-    //         }
-    //     }
-    //     reply->deleteLater();
-    // });
-
     setAttribute(Qt::WA_TranslucentBackground);
     setAttribute(Qt::WA_NoSystemBackground);
 
     auto mainWidget = new QWidget(this);
     auto mainLayout = new QHBoxLayout(mainWidget);
+    mainLayout->setContentsMargins(12, 12, 12, 12);
+    mainLayout->setSpacing(8);
 
     this->setCentralWidget(mainWidget);
 
     m_mainWidget = new MainWidget(mainWidget);
     m_leftWidget = new LeftWidget(mainWidget);
 
-    m_leftWidget->setFixedWidth(200);
+    m_leftWidget->setFixedWidth(220);
  
     mainLayout->addWidget(m_leftWidget);
 
     auto separatorWidget = new Separator();
-    separatorWidget->setFixedWidth(3);
+    separatorWidget->setFixedWidth(2);
 
     mainLayout->addWidget(separatorWidget);
 
     mainLayout->addWidget(m_mainWidget);
+    mainLayout->setStretch(2, 1);
 
     connect(m_leftWidget, &LeftWidget::tabWidgetChanged, m_mainWidget, &MainWidget::changeWidget);
 
-    this->setFixedSize({800, 600});
+    setMinimumSize(900, 620);
 }
 
 void MainWindow::paintEvent(QPaintEvent*)
@@ -77,21 +43,21 @@ void MainWindow::paintEvent(QPaintEvent*)
     painter.fillRect(rect(), QColor(18, 18, 18));
     
     QLinearGradient overlay(0, 0, 0, height());
-    overlay.setColorAt(0, QColor(30, 30, 30, 80));
-    overlay.setColorAt(1, QColor(10, 10, 10, 80));
+    overlay.setColorAt(0, QColor(34, 34, 34, 75));
+    overlay.setColorAt(1, QColor(14, 14, 14, 90));
     painter.fillRect(rect(), overlay);
     
-    painter.setPen(Qt::NoPen);
-    for (int i = 0; i < width(); i += 2) {
-        for (int j = 0; j < height(); j += 2) {
-            int dark = QRandomGenerator::global()->bounded(10, 20);
-            painter.setBrush(QColor(dark, dark, dark, 3));
-            painter.drawRect(i, j, 2, 2);
+    for (int y = 0; y < height(); y += 4)
+    {
+        for (int x = 0; x < width(); x += 4)
+        {
+            const int alpha = ((x + y) % 16 == 0) ? 10 : 4;
+            painter.fillRect(x, y, 2, 2, QColor(30, 30, 30, alpha));
         }
     }
     
-    QRadialGradient accent(width()/2, height() + 100, width() * 0.7);
-    accent.setColorAt(0, QColor(50, 20, 0, 10));
+    QRadialGradient accent(width() / 2, height() + 140, width() * 0.7);
+    accent.setColorAt(0, QColor(70, 28, 0, 14));
     accent.setColorAt(1, Qt::transparent);
     painter.fillRect(rect(), accent);
 }

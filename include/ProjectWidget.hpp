@@ -2,7 +2,13 @@
 #define PROJECT_WIDGET_HPP
 
 #include <QWidget>
+#include <QPixmap>
+#include <QLabel>
+#include <QEnterEvent>
 #include "ProjectData.hpp"
+
+class FireButton;
+class VelixText;
 
 class ProjectWidget : public QWidget
 {
@@ -16,9 +22,19 @@ public:
 
 protected:
     void paintEvent(QPaintEvent *) override;
+    void enterEvent(QEnterEvent* event) override;
+    void leaveEvent(QEvent* event) override;
+
+signals:
+    void openRequested(const QString& projectPath);
 
 private:
     project::ProjectData m_projectData;
+    FireButton* m_openButton{nullptr};
+    VelixText* m_projectNameLabel{nullptr};
+    VelixText* m_projectPathLabel{nullptr};
+    QPixmap m_logo;
+    bool m_isHovered{false};
 };
 
 

@@ -1,8 +1,6 @@
 #include "TabWidget.hpp"
 #include <QHBoxLayout>
-#include <QIcon>
 #include <QPainter>
-#include <QRadialGradient>
 #include <QPainterPath>
 #include <QRandomGenerator>
 #include <QDebug>
@@ -10,33 +8,29 @@
 TabWidget::TabWidget(const QString& tabName, const QString& iconPath, QWidget* parent) : QWidget(parent)
 {
     auto mainLayout = new QHBoxLayout(this);
-    mainLayout->setContentsMargins(10, 4, 10, 4);
-    mainLayout->setSpacing(10);
+    mainLayout->setContentsMargins(12, 6, 12, 6);
+    mainLayout->setSpacing(9);
 
     m_originalPixMap.load(iconPath);
 
     if(m_originalPixMap.isNull()) 
         qWarning() << "Failed to load texture image!";
 
-    QIcon texturedIcon(m_originalPixMap);
     m_labelIcon = new QLabel(this);
-    
-    m_labelIcon->setPixmap(texturedIcon.pixmap(16, 16));
+    m_labelIcon->setFixedSize(18, 18);
     m_labelIcon->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
-
     mainLayout->addWidget(m_labelIcon);
 
-    auto textLabel = new QLabel(tabName, this);
-    textLabel->setStyleSheet( 
-            "color: #D3D3D3;"
-            "font-weight: bold;");
-
-    textLabel->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Preferred);
-    mainLayout->addWidget(textLabel, 0, Qt::AlignLeft);
+    m_textLabel = new VelixText(tabName, this);
+    m_textLabel->setPointSize(10);
+    m_textLabel->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Preferred);
+    mainLayout->addWidget(m_textLabel, 0, Qt::AlignLeft);
 
     mainLayout->addStretch(1);
 
-    this->setMinimumSize(100, 50);
+    setMinimumHeight(44);
+    setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    setCursor(Qt::PointingHandCursor);
 
     updateIconColor();
 }
@@ -51,27 +45,35 @@ void TabWidget::setActive(bool isActive)
 
 void TabWidget::updateIconColor()
 {
-    // if (m_originalPixMap.isNull()) return;
+    if (m_originalPixMap.isNull())
+        return;
 
-    // QPixmap coloredPixmap = m_originalPixMap.scaled(16, 16, Qt::KeepAspectRatio, Qt::SmoothTransformation);
-    
-    // if (m_isActive) {
-    //     QPainter painter(&coloredPixmap);
-    //     painter.setCompositionMode(QPainter::CompositionMode_SourceAtop);
-    //     painter.fillRect(coloredPixmap.rect(), QColor(255, 100, 0, 200));
-    // } else {
-    //     QImage image = coloredPixmap.toImage();
-    //     for (int y = 0; y < image.height(); y++) {
-    //         for (int x = 0; x < image.width(); x++) {
-    //             QRgb pixel = image.pixel(x, y);
-    //             int gray = qGray(pixel);
-    //             image.setPixel(x, y, qRgba(gray, gray, gray, qAlpha(pixel)));
-    //         }
-    //     }
-    //     coloredPixmap = QPixmap::fromImage(image);
-    // }
-    
-    // m_labelIcon->setPixmap(coloredPixmap);
+    QPixmap basePixmap = m_originalPixMap.scaled(16, 16, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    QPixmap colorized(basePixmap.size());
+    colorized.fill(Qt::transparent);
+
+    QColor tint = QColor(165, 165, 165);
+    QColor textColor = QColor(190, 190, 190);
+
+    if (m_isActive)
+    {
+        tint = QColor(255, 196, 124);
+        textColor = QColor(244, 244, 244);
+    }
+    else if (m_isHovered)
+    {
+        tint = QColor(210, 210, 210);
+        textColor = QColor(220, 220, 220);
+    }
+
+    QPainter iconPainter(&colorized);
+    iconPainter.drawPixmap(0, 0, basePixmap);
+    iconPainter.setCompositionMode(QPainter::CompositionMode_SourceIn);
+    iconPainter.fillRect(colorized.rect(), tint);
+    iconPainter.end();
+
+    m_labelIcon->setPixmap(colorized);
+    m_textLabel->setTextColor(textColor);
 }
 
 void TabWidget::mousePressEvent(QMouseEvent* event)
@@ -82,26 +84,44 @@ void TabWidget::mousePressEvent(QMouseEvent* event)
     QWidget::mousePressEvent(event);
 }
 
+void TabWidget::enterEvent(QEnterEvent* event)
+{
+    m_isHovered = true;
+    updateIconColor();
+    update();
+    QWidget::enterEvent(event);
+}
+
+void TabWidget::leaveEvent(QEvent* event)
+{
+    m_isHovered = false;
+    updateIconColor();
+    update();
+    QWidget::leaveEvent(event);
+}
+
 void TabWidget::paintEvent(QPaintEvent *)
 {
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing);
 
-    QRectF rect = this->rect();
+    QRectF rect = this->rect().adjusted(1, 1, -1, -1);
     QPainterPath path;
     path.addRoundedRect(rect, m_cornerRadius, m_cornerRadius);
 
-    if (m_isActive) 
+    QColor borderColor(52, 52, 52);
+    if (m_isActive)
     {
         QLinearGradient grad(0, 0, 0, height());
         grad.setColorAt(0.0, QColor(255, 100, 0, 220));
-        grad.setColorAt(0.5, QColor(255, 60, 0, 180)); 
-        grad.setColorAt(1.0, QColor(180, 40, 0, 150));
+        grad.setColorAt(0.6, QColor(220, 68, 0, 185));
+        grad.setColorAt(1.0, QColor(130, 35, 0, 160));
         
         painter.fillPath(path, grad);
+        borderColor = QColor(255, 140, 0, 120);
 
         painter.setClipPath(path);
-        painter.setOpacity(0.15);
+        painter.setOpacity(0.12);
         for (int i = 0; i < width(); i += 3) {
             for (int j = 0; j < height(); j += 3) {
                 int alpha = QRandomGenerator::global()->bounded(30, 80);
@@ -109,9 +129,25 @@ void TabWidget::paintEvent(QPaintEvent *)
                 painter.drawPoint(i, j);
             }
         }
-
-        painter.setOpacity(1.0);
-        painter.setPen(QPen(QColor(255, 140, 0, 120), 1));
-        painter.drawPath(path);
     }
+    else if (m_isHovered)
+    {
+        QLinearGradient grad(0, 0, 0, height());
+        grad.setColorAt(0.0, QColor(68, 68, 68, 220));
+        grad.setColorAt(1.0, QColor(52, 52, 52, 220));
+        painter.fillPath(path, grad);
+        borderColor = QColor(88, 88, 88);
+    }
+    else
+    {
+        QLinearGradient grad(0, 0, 0, height());
+        grad.setColorAt(0.0, QColor(52, 52, 52, 170));
+        grad.setColorAt(1.0, QColor(40, 40, 40, 170));
+        painter.fillPath(path, grad);
+    }
+
+    painter.setClipping(false);
+    painter.setOpacity(1.0);
+    painter.setPen(QPen(borderColor, 1));
+    painter.drawPath(path);
 }

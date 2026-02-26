@@ -1,5 +1,7 @@
 #include "FileDownloader.hpp"
 #include <QDebug>
+#include <QFileInfo>
+#include <QDir>
 
 FileDownloader::FileDownloader(QObject* parent) : QObject(parent)
 {
@@ -8,6 +10,17 @@ FileDownloader::FileDownloader(QObject* parent) : QObject(parent)
 
 bool FileDownloader::init(const QString& path)
 {
+    if (m_file)
+    {
+        m_file->flush();
+        m_file->close();
+        m_file->deleteLater();
+        m_file = nullptr;
+    }
+
+    const QFileInfo fileInfo(path);
+    QDir().mkpath(fileInfo.absolutePath());
+
     m_file = new QFile(path, this);
 
     if (!m_file->open(QIODevice::WriteOnly)) 

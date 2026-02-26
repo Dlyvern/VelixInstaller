@@ -2,7 +2,8 @@
 #include <QLabel>
 #include <QPixmap>
 #include <QIcon>
-#include <QPushButton>
+#include <QPainter>
+#include <QPainterPath>
 
 #include <QDebug>
 
@@ -10,9 +11,9 @@ LeftWidget::LeftWidget(QWidget* parent) : QWidget(parent)
 {
     m_mainLayout = new QVBoxLayout(this);
 
-    m_mainLayout->setSpacing(1);
+    m_mainLayout->setSpacing(6);
 
-    m_mainLayout->setContentsMargins(QMargins(5, 10, 10, 10));
+    m_mainLayout->setContentsMargins(QMargins(10, 12, 10, 12));
 
     QPixmap texturedPixmap("./resources/VelixFire.png");
 
@@ -22,9 +23,10 @@ LeftWidget::LeftWidget(QWidget* parent) : QWidget(parent)
     }
 
     QIcon texturedIcon(texturedPixmap);
-    auto *iconLabel = new QLabel;
+    auto* iconLabel = new QLabel(this);
 
     iconLabel->setPixmap(texturedIcon.pixmap(64, 64));
+    iconLabel->setAlignment(Qt::AlignCenter);
 
     m_mainLayout->addWidget(iconLabel, 0, Qt::AlignCenter);
 
@@ -36,6 +38,29 @@ LeftWidget::LeftWidget(QWidget* parent) : QWidget(parent)
     m_tabs.first()->setActive(true);
 
     m_mainLayout->addStretch(10);
+}
+
+void LeftWidget::paintEvent(QPaintEvent* event)
+{
+    Q_UNUSED(event);
+
+    QPainter painter(this);
+    painter.setRenderHint(QPainter::Antialiasing);
+
+    const QRectF bounds = rect().adjusted(1, 1, -1, -1);
+    QPainterPath path;
+    path.addRoundedRect(bounds, 14, 14);
+
+    QLinearGradient gradient(bounds.topLeft(), bounds.bottomLeft());
+    gradient.setColorAt(0.0, QColor(44, 44, 44, 220));
+    gradient.setColorAt(1.0, QColor(31, 31, 31, 220));
+
+    painter.fillPath(path, gradient);
+    painter.setPen(QPen(QColor(64, 64, 64), 1));
+    painter.drawPath(path);
+
+    painter.setPen(QPen(QColor(255, 120, 0, 90), 1));
+    painter.drawLine(bounds.topRight().toPoint(), bounds.bottomRight().toPoint());
 }
 
 void LeftWidget::addTab(const QString& tabName, const QString& iconPath, QWidget* parent)

@@ -4,7 +4,6 @@
 #include <QWidget>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
-#include <QProgressBar>
 #include <QLabel>
 
 
@@ -13,7 +12,8 @@
 #include "Config.hpp"
 #include "Installer.hpp"
 #include "FileDownloader.hpp"
-#include "Installer.hpp"
+#include "widgets/VelixProgressBar.hpp"
+#include "widgets/VelixText.hpp"
 
 class InstallWidget : public QWidget
 {
@@ -30,16 +30,27 @@ private:
     FileDownloader* m_fileDownloader{nullptr};
     Config m_config;
     Installer m_installer;
-    QProgressBar* m_progressBar{nullptr};
-    QLabel* m_speedLabel{nullptr};
+    VelixProgressBar* m_progressBar{nullptr};
+    VelixText* m_speedLabel{nullptr};
+    QString m_currentDownloadTag;
+    QString m_currentInstallPath;
+    bool m_downloadInProgress{false};
 
+    void bindDownloadHandlers();
+    QString chooseInstallDirectory(const QString& tagName);
+    bool extractArchive(const QString& archivePath, const QString& destinationDir, QString& errorMessage);
+    void upsertInstalledVersion(const QString& tagName, const QString& installPath);
+    void applyCurrentVersionToWidgets();
     void checkForInstalledVersions();
 
 private slots:
     void onNewVersion(const QString &tagName, const QString &downloadLink);
 
-    void onLaunchVersion(const QString& tagName);
+    void onChooseVersion(const QString& tagName);
     void onDownloadVersion(const QString& tagName, const QString& downloadLink);
+
+signals:
+    void installedVersionsChanged();
 };
 
 #endif //INSTALL_WIDGET_HPP

@@ -20,13 +20,17 @@ class Config
 {
 public:
     bool load(const std::string& path = "");
+    bool save(const std::string& path = "");
 
-    nlohmann::json getConfig();
+    const nlohmann::json& getConfig() const;
+    nlohmann::json& mutableConfig();
 
 private:
+    void ensureDefaults();
     std::string getConfigPath();
 
     nlohmann::json m_config;
+    std::string m_loadedPath;
 };
 
 

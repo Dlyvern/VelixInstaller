@@ -1,29 +1,44 @@
 #include "MainWidget.hpp"
 
 #include <QVBoxLayout>
-#include <QLabel>
-#include <QPushButton>
+#include <QHBoxLayout>
 #include <QMap>
+
+#include "widgets/VelixText.hpp"
 
 MainWidget::MainWidget(QWidget* widget) : QWidget(widget)
 {
     auto mainLayout = new QVBoxLayout(this);
-    auto logoLabel = new QLabel{"VelixInstaller", this};
+    mainLayout->setContentsMargins(14, 10, 14, 14);
+    mainLayout->setSpacing(10);
 
-    logoLabel->setStyleSheet( 
-        "color: #D3D3D3;"
-        "font-weight: bold;"
-        "font-size: 18pt;"
-    );
+    auto headerWidget = new QWidget(this);
+    auto headerLayout = new QHBoxLayout(headerWidget);
+    headerLayout->setContentsMargins(0, 0, 0, 0);
 
-    mainLayout->addWidget(logoLabel, 0, Qt::AlignTop | Qt::AlignCenter);
+    auto logoLabel = new VelixText{"VelixInstaller", this};
+    logoLabel->setPointSize(18);
+
+    auto subtitleLabel = new VelixText{"ENGINE PROJECT HUB", this};
+    subtitleLabel->setPointSize(9);
+    subtitleLabel->setBold(false);
+    subtitleLabel->setTextColor(QColor(170, 170, 170));
+
+    headerLayout->addWidget(logoLabel, 0, Qt::AlignLeft | Qt::AlignVCenter);
+    headerLayout->addStretch(1);
+    headerLayout->addWidget(subtitleLabel, 0, Qt::AlignRight | Qt::AlignVCenter);
+
+    mainLayout->addWidget(headerWidget);
 
     m_stackedWidget = new QStackedWidget(this);
+    m_stackedWidget->setContentsMargins(0, 0, 0, 0);
 
     m_projectWidget = new ProjectsWidget(m_stackedWidget);
     m_installWidget = new InstallWidget(m_stackedWidget);
     m_settingsWidget = new SettingsWidget(m_stackedWidget);
     m_documentationWidget = new DocumentationWidget(m_stackedWidget);
+
+    connect(m_installWidget, &InstallWidget::installedVersionsChanged, m_settingsWidget, &SettingsWidget::reloadInstalledVersions);
 
     m_stackedWidget->addWidget(m_installWidget);
     m_stackedWidget->addWidget(m_projectWidget);

@@ -11,6 +11,7 @@ namespace project
     public:
         std::string name;
         std::string path;
+        std::string projectFilePath;
     };
 } //namespace project
 

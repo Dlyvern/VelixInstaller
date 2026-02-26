@@ -13,6 +13,10 @@ public:
     explicit LeftWidget(QWidget* parent = nullptr);
 
     ~LeftWidget() override = default;
+
+protected:
+    void paintEvent(QPaintEvent* event) override;
+
 private:
     QVector<TabWidget*> m_tabs;
 

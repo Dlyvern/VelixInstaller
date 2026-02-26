@@ -10,6 +10,7 @@
 #include <QPainterPath>
 #include <QLabel>
 #include "FireButton.hpp"
+#include "widgets/VelixText.hpp"
 
 class VersionWidget : public QWidget
 {
@@ -17,6 +18,7 @@ class VersionWidget : public QWidget
 public:
     VersionWidget(const QString& tagName, const QString& downloadLink, bool isInstalled, QWidget* parent = nullptr);
 
+    [[nodiscard]] const QString& getTagName() const;
     [[nodiscard]] const QString& getDownloadLink() const;
 
     void setSelected(bool isSelected);
@@ -25,12 +27,13 @@ public:
 
     void setInstalled(bool isInstalled);
     void setDisabled(bool isDisabled);
+    void setCurrentVersion(bool isCurrentVersion);
 
     ~VersionWidget() override = default;
 signals:
     void clicked(VersionWidget* widget);
     void installVersion(const QString& tagName, const QString& downloadLink);
-    void launchVersion(const QString& tagName);
+    void chooseVersion(const QString& tagName);
 
 protected:
     void mousePressEvent(QMouseEvent* event) override;
@@ -44,14 +47,18 @@ private:
 
     FireButton* m_button{nullptr};
     QLabel* m_labelIcon{nullptr};
-    QLabel* m_statusLabel{nullptr};
+    VelixText* m_nameLabel{nullptr};
+    VelixText* m_statusLabel{nullptr};
 
     bool m_isInstalled{false};
+    bool m_isCurrentVersion{false};
 
     bool m_isDisabled{false};
 
     bool m_isSelected{false};
     bool m_isHovered{false};
+
+    void refreshButtonAndStatus();
 };
 
 
