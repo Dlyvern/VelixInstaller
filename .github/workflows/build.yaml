@@ -18,12 +18,12 @@ jobs:
         with:
           python-version: '3.x'
 
-      - name: Setup Qt (MSVC 2022 64-bit)
+      - name: Setup Qt (MSVC 2019 64-bit)
         uses: jurplel/install-qt-action@v3
         with:
           version: '6.5.1'
           host: 'windows'
-          arch: 'win64_msvc2022_64'
+          arch: 'win64_msvc2019_64'
 
       - name: Configure CMake
         shell: powershell
@@ -107,7 +107,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             qt6-base-dev qt6-base-dev-tools qt6-tools-dev-tools \
-            wget file desktop-file-utils patchelf fuse3
+            wget file desktop-file-utils patchelf fuse3 imagemagick
 
       - name: Configure CMake
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=/usr/lib/x86_64-linux-gnu/cmake/Qt6
@@ -123,7 +123,7 @@ jobs:
 
           cp build/VelixInstall AppDir/usr/bin/VelixInstall
           cp -r resources AppDir/usr/bin/resources
-          cp resources/VelixFire.png AppDir/usr/share/icons/hicolor/256x256/apps/velixinstall.png
+          convert resources/VelixFire.png -resize 256x256 -background none -gravity center -extent 256x256 AppDir/usr/share/icons/hicolor/256x256/apps/velixinstall.png
 
           cat > AppDir/VelixInstall.desktop << 'EOF'
           [Desktop Entry]
