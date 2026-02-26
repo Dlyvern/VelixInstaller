@@ -74,7 +74,8 @@ void InstallWidget::bindDownloadHandlers()
         if (bytesTotal <= 0)
             return;
 
-        const int safeTotal = static_cast<int>(std::min<qint64>(bytesTotal, std::numeric_limits<int>::max()));
+        // Avoid Windows max macro collision with numeric_limits::max().
+        const int safeTotal = static_cast<int>(std::min<qint64>(bytesTotal, (std::numeric_limits<int>::max)()));
         const int safeCurrent = static_cast<int>(std::min<qint64>(bytesReceived, static_cast<qint64>(safeTotal)));
 
         m_progressBar->setRange(0, safeTotal);
