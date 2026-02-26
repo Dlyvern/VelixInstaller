@@ -69,11 +69,67 @@ jobs:
 
           & $windeployqt --release --compiler-runtime build/Release/VelixInstall.exe
 
-      - name: Upload Windows executable and dependencies
+      - name: Install Inno Setup
+        shell: powershell
+        run: choco install innosetup -y
+
+      - name: Build Windows installer (.exe)
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Force build\installer\output | Out-Null
+
+          $appVersion = if (-not [string]::IsNullOrWhiteSpace($env:GITHUB_RUN_NUMBER)) {
+            "0.1.$env:GITHUB_RUN_NUMBER"
+          } else {
+            "0.1.0"
+          }
+
+          @"
+          [Setup]
+          AppId={{4C2FA5BD-3B40-4898-9D35-FDA4A316F489}
+          AppName=VelixInstall
+          AppVersion=$appVersion
+          DefaultDirName={autopf}\VelixInstall
+          DefaultGroupName=VelixInstall
+          DisableProgramGroupPage=yes
+          OutputDir=build\installer\output
+          OutputBaseFilename=VelixInstallSetup
+          Compression=lzma2
+          SolidCompression=yes
+          WizardStyle=modern
+          ArchitecturesAllowed=x64compatible
+          ArchitecturesInstallIn64BitMode=x64compatible
+          UninstallDisplayIcon={app}\VelixInstall.exe
+
+          [Languages]
+          Name: "english"; MessagesFile: "compiler:Default.isl"
+
+          [Tasks]
+          Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional icons:"
+
+          [Files]
+          Source: "build\Release\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
+
+          [Icons]
+          Name: "{autoprograms}\VelixInstall"; Filename: "{app}\VelixInstall.exe"
+          Name: "{autodesktop}\VelixInstall"; Filename: "{app}\VelixInstall.exe"; Tasks: desktopicon
+
+          [Run]
+          Filename: "{app}\VelixInstall.exe"; Description: "Launch VelixInstall"; Flags: nowait postinstall skipifsilent
+          "@ | Set-Content -Path VelixInstall.iss -Encoding UTF8
+
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (!(Test-Path $iscc)) {
+            throw "ISCC.exe not found at '$iscc'"
+          }
+
+          & $iscc VelixInstall.iss
+
+      - name: Upload Windows installer
         uses: actions/upload-artifact@v4
         with:
-          name: VelixInstall-windows
-          path: build/Release/
+          name: VelixInstall-windows-installer
+          path: build/installer/output/VelixInstallSetup.exe
 
   build-linux:
     runs-on: ubuntu-latest
@@ -97,19 +153,46 @@ jobs:
           mkdir -p build/package/bin
           cp build/VelixInstall build/package/bin/
           cp -r resources build/package/bin/
-          # Copy Qt libraries
+
+          # Copy Qt runtime libraries.
           cp /usr/lib/x86_64-linux-gnu/libQt6Core.so.6 build/package/bin/
           cp /usr/lib/x86_64-linux-gnu/libQt6Gui.so.6 build/package/bin/
           cp /usr/lib/x86_64-linux-gnu/libQt6Widgets.so.6 build/package/bin/
           cp /usr/lib/x86_64-linux-gnu/libQt6Svg.so.6 build/package/bin/
           cp /usr/lib/x86_64-linux-gnu/libQt6DBus.so.6 build/package/bin/
           cp /usr/lib/x86_64-linux-gnu/libQt6Network.so.6 build/package/bin/
+          cp /usr/lib/x86_64-linux-gnu/libQt6XcbQpa.so.6 build/package/bin/ || true
+
+          # Qt6 on Ubuntu links against ICU; include those for portability.
+          cp /usr/lib/x86_64-linux-gnu/libicudata.so.* build/package/bin/ || true
+          cp /usr/lib/x86_64-linux-gnu/libicuuc.so.* build/package/bin/ || true
+          cp /usr/lib/x86_64-linux-gnu/libicui18n.so.* build/package/bin/ || true
+
+          # Copy required Qt plugins for QWidget/XCB runtime.
+          mkdir -p build/package/bin/plugins/platforms
+          mkdir -p build/package/bin/plugins/imageformats
+          mkdir -p build/package/bin/plugins/xcbglintegrations
+          cp /usr/lib/x86_64-linux-gnu/qt6/plugins/platforms/libqxcb.so build/package/bin/plugins/platforms/
+          cp /usr/lib/x86_64-linux-gnu/qt6/plugins/imageformats/libqsvg.so build/package/bin/plugins/imageformats/ || true
+          cp /usr/lib/x86_64-linux-gnu/qt6/plugins/imageformats/libqjpeg.so build/package/bin/plugins/imageformats/ || true
+          cp /usr/lib/x86_64-linux-gnu/qt6/plugins/imageformats/libqgif.so build/package/bin/plugins/imageformats/ || true
+          cp /usr/lib/x86_64-linux-gnu/qt6/plugins/xcbglintegrations/libqxcb-egl-integration.so build/package/bin/plugins/xcbglintegrations/ || true
+          cp /usr/lib/x86_64-linux-gnu/qt6/plugins/xcbglintegrations/libqxcb-glx-integration.so build/package/bin/plugins/xcbglintegrations/ || true
+
+          # Ensure Qt resolves plugins from the local package.
+          cat > build/package/bin/qt.conf << 'EOF'
+          [Paths]
+          Plugins=plugins
+          EOF
 
           # Create a wrapper script to run the binary
-          echo '#!/bin/bash' > build/package/bin/run.sh
-          echo 'DIR="$(dirname "$0")"' >> build/package/bin/run.sh
-          echo 'export LD_LIBRARY_PATH="$DIR"' >> build/package/bin/run.sh
-          echo '"$DIR/VelixInstall"' >> build/package/bin/run.sh
+          cat > build/package/bin/run.sh << 'EOF'
+          #!/bin/bash
+          DIR="$(cd "$(dirname "$0")" && pwd)"
+          export LD_LIBRARY_PATH="$DIR:${LD_LIBRARY_PATH}"
+          export QT_PLUGIN_PATH="$DIR/plugins"
+          exec "$DIR/VelixInstall" "$@"
+          EOF
           chmod +x build/package/bin/run.sh
 
       - name: Upload Linux artifact
