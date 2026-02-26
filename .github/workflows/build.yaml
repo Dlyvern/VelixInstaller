@@ -27,7 +27,16 @@ jobs:
 
       - name: Configure CMake
         shell: powershell
-        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_PREFIX_PATH="$env:QT_INSTALL_DIR"
+        run: |
+          $cmakeArgs = @('-S', '.', '-B', 'build', '-G', 'Visual Studio 17 2022', '-A', 'x64')
+
+          if (-not [string]::IsNullOrWhiteSpace($env:QT_INSTALL_DIR)) {
+            $cmakeArgs += "-DCMAKE_PREFIX_PATH=$env:QT_INSTALL_DIR"
+          } elseif (-not [string]::IsNullOrWhiteSpace($env:Qt6_DIR)) {
+            $cmakeArgs += "-DQt6_DIR=$env:Qt6_DIR"
+          }
+
+          cmake @cmakeArgs
 
       - name: Build
         run: cmake --build build --config Release
@@ -40,9 +49,22 @@ jobs:
       - name: Deploy Qt dependencies
         shell: powershell
         run: |
-          $windeployqt = Join-Path $env:QT_INSTALL_DIR 'bin\windeployqt.exe'
-          if (!(Test-Path $windeployqt)) {
-            $windeployqt = (Get-Command windeployqt.exe -ErrorAction Stop).Source
+          $windeployqt = $null
+
+          $cmd = Get-Command windeployqt.exe -ErrorAction SilentlyContinue
+          if ($cmd) {
+            $windeployqt = $cmd.Source
+          }
+
+          if (-not $windeployqt -and -not [string]::IsNullOrWhiteSpace($env:QT_INSTALL_DIR)) {
+            $candidate = Join-Path $env:QT_INSTALL_DIR 'bin\windeployqt.exe'
+            if (Test-Path $candidate) {
+              $windeployqt = $candidate
+            }
+          }
+
+          if (-not $windeployqt) {
+            throw "windeployqt.exe not found. QT_INSTALL_DIR='$env:QT_INSTALL_DIR' Qt6_DIR='$env:Qt6_DIR'"
           }
 
           & $windeployqt --release --compiler-runtime build/Release/VelixInstall.exe
