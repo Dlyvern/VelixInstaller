@@ -21,6 +21,7 @@ public:
 signals:
     void installVersion(const QString& tagName, const QString& downloadLink);
     void chooseVersion(const QString& tagName);
+    void deleteVersion(const QString& tagName);
 
 public slots:
     void addNewVersion(const QString& tagName, const QString& downloadLink, bool isInstalled);

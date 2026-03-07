@@ -49,14 +49,29 @@ ProjectWidget::ProjectWidget(const project::ProjectData& projectData, QWidget* p
 
     mainLayout->addLayout(labelsLayout, 1);
 
-    m_openButton = new FireButton("Open", FireButton::Variant::Secondary, this);
+    auto* buttonsLayout = new QVBoxLayout();
+    buttonsLayout->setSpacing(6);
+    buttonsLayout->setContentsMargins(0, 0, 0, 0);
+
+    m_openButton = new FireButton("Open", FireButton::Variant::Primary, this);
     m_openButton->setFixedWidth(110);
     connect(m_openButton, &QPushButton::clicked, this, [this]
     {
         emit openRequested(QString::fromStdString(m_projectData.path));
     });
 
-    mainLayout->addWidget(m_openButton, 0, Qt::AlignRight | Qt::AlignTop);
+    m_removeButton = new FireButton("Remove", FireButton::Variant::Secondary, this);
+    m_removeButton->setFixedWidth(110);
+    connect(m_removeButton, &QPushButton::clicked, this, [this]
+    {
+        emit removeRequested(QString::fromStdString(m_projectData.projectFilePath));
+    });
+
+    buttonsLayout->addWidget(m_openButton);
+    buttonsLayout->addWidget(m_removeButton);
+    buttonsLayout->addStretch(1);
+
+    mainLayout->addLayout(buttonsLayout, 0);
 }
 
 void ProjectWidget::paintEvent(QPaintEvent*)

@@ -27,6 +27,11 @@ void VersionsWidget::addNewVersion(const QString& tagName, const QString& downlo
     {
         emit installVersion(tagName, downloadLink);
     });
+
+    connect(versionWidget, &VersionWidget::deleteVersion, this, [this](const QString& tagName)
+    {
+        emit deleteVersion(tagName);
+    });
     
     m_versionWidgets.push_back(versionWidget);
     m_versionsByTag.insert(tagName, versionWidget);

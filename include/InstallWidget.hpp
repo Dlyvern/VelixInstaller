@@ -48,6 +48,7 @@ private slots:
 
     void onChooseVersion(const QString& tagName);
     void onDownloadVersion(const QString& tagName, const QString& downloadLink);
+    void onDeleteVersion(const QString& tagName);
 
 signals:
     void installedVersionsChanged();

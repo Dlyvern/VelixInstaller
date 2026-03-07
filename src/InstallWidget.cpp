@@ -1,4 +1,6 @@
 #include "InstallWidget.hpp"
+#include "VelixConfirmDialog.hpp"
+#include "ToastNotification.hpp"
 
 #include <filesystem>
 #include <algorithm>
@@ -32,6 +34,7 @@ InstallWidget::InstallWidget(QWidget* parent) : QWidget(parent)
 
     connect(m_versionsWidget, &VersionsWidget::chooseVersion, this, &InstallWidget::onChooseVersion);
     connect(m_versionsWidget, &VersionsWidget::installVersion, this, &InstallWidget::onDownloadVersion);
+    connect(m_versionsWidget, &VersionsWidget::deleteVersion, this, &InstallWidget::onDeleteVersion);
 
     m_config.load();
     m_installer.init();
@@ -98,6 +101,7 @@ void InstallWidget::bindDownloadHandlers()
         m_downloadInProgress = false;
         m_progressBar->hide();
         m_speedLabel->setText(QString("Download failed: %1").arg(error));
+        ToastNotification::show(QString("Download failed: %1").arg(error), ToastType::Error, this);
         qWarning() << "Download failed:" << error;
     });
 
@@ -113,11 +117,17 @@ void InstallWidget::bindDownloadHandlers()
         if (!extractArchive(archivePath, m_currentInstallPath, extractionError))
         {
             m_speedLabel->setText(QString("Extraction failed: %1").arg(extractionError));
+            ToastNotification::show(QString("Extraction failed: %1").arg(extractionError), ToastType::Error, this);
             qWarning() << "Extraction failed:" << extractionError;
             return;
         }
 
+        QFile::remove(archivePath);
+
         m_speedLabel->setText("Installed");
+        ToastNotification::show(
+            QString("Velix %1 installed successfully!").arg(m_currentDownloadTag),
+            ToastType::Success, this);
 
         if (!m_currentDownloadTag.isEmpty())
             m_versionsWidget->setVersionInstalled(m_currentDownloadTag, true);
@@ -246,10 +256,14 @@ void InstallWidget::onChooseVersion(const QString& tagName)
     if (m_config.save())
     {
         m_speedLabel->setText(QString("Default version set to %1").arg(tagName));
+        ToastNotification::show(QString("Default version set to %1").arg(tagName), ToastType::Info, this);
         emit installedVersionsChanged();
     }
     else
+    {
         m_speedLabel->setText("Failed to save default version");
+        ToastNotification::show("Failed to save default version", ToastType::Error, this);
+    }
 
     applyCurrentVersionToWidgets();
 }
@@ -344,4 +358,59 @@ void InstallWidget::onDownloadVersion(const QString& tagName, const QString& dow
     m_speedLabel->setText(QString("Downloading %1...").arg(tagName));
 
     m_releaseChecker->download(downloadLink);
+}
+
+void InstallWidget::onDeleteVersion(const QString& tagName)
+{
+    if (!VelixConfirmDialog::ask(
+            "Remove Version",
+            QString("Remove Velix %1 from this machine?\n\nThe installed files will be permanently deleted.").arg(tagName),
+            "Remove",
+            "Cancel",
+            this))
+    {
+        return;
+    }
+
+    auto& config = m_config.mutableConfig();
+
+    QString installPath;
+    if (config.contains("installed_versions") && config["installed_versions"].is_array())
+    {
+        auto& versions = config["installed_versions"];
+        for (auto it = versions.begin(); it != versions.end(); ++it)
+        {
+            if (it->contains("version") && (*it)["version"].is_string() &&
+                (*it)["version"].get<std::string>() == tagName.toStdString())
+            {
+                if (it->contains("path") && (*it)["path"].is_string())
+                    installPath = QString::fromStdString((*it)["path"].get<std::string>());
+                versions.erase(it);
+                break;
+            }
+        }
+    }
+
+    if (config.contains("current_version") && config["current_version"].is_string() &&
+        config["current_version"].get<std::string>() == tagName.toStdString())
+    {
+        config.erase("current_version");
+    }
+
+    m_config.save();
+
+    if (!installPath.isEmpty())
+    {
+        std::error_code ec;
+        std::filesystem::remove_all(installPath.toStdString(), ec);
+        if (ec)
+            qWarning() << "Failed to delete install directory:" << installPath;
+    }
+
+    m_versionsWidget->setVersionInstalled(tagName, false);
+    applyCurrentVersionToWidgets();
+
+    m_speedLabel->setText(QString("Removed %1").arg(tagName));
+    ToastNotification::show(QString("Velix %1 removed").arg(tagName), ToastType::Warning, this);
+    emit installedVersionsChanged();
 }

@@ -11,7 +11,7 @@ MainWindow::MainWindow(QWidget* widget) : QMainWindow(widget)
     auto mainWidget = new QWidget(this);
     auto mainLayout = new QHBoxLayout(mainWidget);
     mainLayout->setContentsMargins(12, 12, 12, 12);
-    mainLayout->setSpacing(8);
+    mainLayout->setSpacing(0);
 
     this->setCentralWidget(mainWidget);
 
@@ -19,13 +19,14 @@ MainWindow::MainWindow(QWidget* widget) : QMainWindow(widget)
     m_leftWidget = new LeftWidget(mainWidget);
 
     m_leftWidget->setFixedWidth(220);
- 
+
     mainLayout->addWidget(m_leftWidget);
 
     auto separatorWidget = new Separator();
     separatorWidget->setFixedWidth(2);
 
     mainLayout->addWidget(separatorWidget);
+    mainLayout->addSpacing(8);
 
     mainLayout->addWidget(m_mainWidget);
     mainLayout->setStretch(2, 1);

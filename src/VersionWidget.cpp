@@ -47,6 +47,17 @@ QWidget(parent), m_downloadLink(downloadLink), m_tagName(tagName)
 
     mainLayout->addWidget(m_button);
 
+    m_deleteButton = new FireButton("Remove", FireButton::Variant::Secondary, this);
+    m_deleteButton->setFixedWidth(80);
+    m_deleteButton->hide();
+
+    connect(m_deleteButton, &QPushButton::clicked, this, [this]
+    {
+        emit deleteVersion(m_tagName);
+    });
+
+    mainLayout->addWidget(m_deleteButton);
+
     setBackgroundRole(QPalette::Base);
     setAutoFillBackground(true);
 
@@ -92,6 +103,7 @@ void VersionWidget::refreshButtonAndStatus()
         m_button->setVariant(FireButton::Variant::Primary);
         m_button->setEnabled(!m_isDisabled);
         m_statusLabel->setTextColor(m_isDisabled ? QColor(136, 136, 136) : QColor(211, 211, 211));
+        m_deleteButton->hide();
         return;
     }
 
@@ -109,6 +121,8 @@ void VersionWidget::refreshButtonAndStatus()
         m_button->setText("Choose");
         m_button->setEnabled(!m_isDisabled);
     }
+
+    m_deleteButton->setVisible(!m_isDisabled);
 }
 
 void VersionWidget::paintEvent(QPaintEvent* event)

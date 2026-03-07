@@ -5,9 +5,11 @@
 #include <QVBoxLayout>
 #include <QVector>
 #include <QSet>
+#include <QLineEdit>
 
 #include "Config.hpp"
 #include "ProjectWidget.hpp"
+#include "json/json.hpp"
 
 class ProjectsWidget : public QWidget
 {
@@ -24,21 +26,25 @@ private slots:
     void onCreateProjectRequested();
     void onOpenProjectRequested();
     void onOpenProjectPath(const QString& projectPath);
+    void onRemoveProjectRequested(const QString& projectFilePath);
+    void onSearchTextChanged(const QString& text);
 
 private:
     QString resolveExecutableFromInstallPath(const QString& installPath) const;
     QString defaultProjectsRoot() const;
-    bool createProject(const QString& parentDir, const QString& projectName, project::ProjectData& outProject);
+    bool createProject(const QString& parentDir, const QString& projectName,
+                       const nlohmann::json& settingsJson, project::ProjectData& outProject);
     bool loadProjectFile(const QString& projectFilePath, project::ProjectData& outProject) const;
     bool upsertProjectInConfig(const project::ProjectData& projectData);
     void addProjectCard(const project::ProjectData& projectData);
     void loadProjectsFromConfig();
 
-    Config m_config;
-    QWidget* m_projectsContentWidget{nullptr};
+    Config       m_config;
+    QWidget*     m_projectsContentWidget{nullptr};
     QVBoxLayout* m_projectsLayout{nullptr};
+    QLineEdit*   m_searchBar{nullptr};
     QVector<ProjectWidget*> m_projectWidgets;
-    QSet<QString> m_knownProjectPaths;
+    QSet<QString>           m_knownProjectPaths;
 };
 
 #endif //PROJECTS_WIDGET_HPP

@@ -1,39 +1,23 @@
 #include "LeftWidget.hpp"
-#include <QLabel>
-#include <QPixmap>
-#include <QIcon>
 #include <QPainter>
 #include <QPainterPath>
-
 #include <QDebug>
+
+#include "FireLogoWidget.hpp"
 
 LeftWidget::LeftWidget(QWidget* parent) : QWidget(parent)
 {
     m_mainLayout = new QVBoxLayout(this);
-
     m_mainLayout->setSpacing(6);
-
     m_mainLayout->setContentsMargins(QMargins(10, 12, 10, 12));
 
-    QPixmap texturedPixmap("./resources/VelixFire.png");
+    auto* logoWidget = new FireLogoWidget(this);
+    m_mainLayout->addWidget(logoWidget, 0, Qt::AlignCenter);
 
-    if(texturedPixmap.isNull()) 
-    {
-        qWarning() << "Failed to load texture image!";
-    }
-
-    QIcon texturedIcon(texturedPixmap);
-    auto* iconLabel = new QLabel(this);
-
-    iconLabel->setPixmap(texturedIcon.pixmap(64, 64));
-    iconLabel->setAlignment(Qt::AlignCenter);
-
-    m_mainLayout->addWidget(iconLabel, 0, Qt::AlignCenter);
-
-    addTab("Projects", "./resources/folder.png", this);
-    addTab("Documentation", "./resources/document.png", this);
-    addTab("Settings", "./resources/setting.png", this);
-    addTab("Installs", "./resources/installs.png", this);
+    addTab("Projects",      "./resources/folder.png",    this);
+    addTab("Documentation", "./resources/document.png",  this);
+    addTab("Settings",      "./resources/setting.png",   this);
+    addTab("Installs",      "./resources/installs.png",  this);
 
     m_tabs.first()->setActive(true);
 
@@ -58,9 +42,6 @@ void LeftWidget::paintEvent(QPaintEvent* event)
     painter.fillPath(path, gradient);
     painter.setPen(QPen(QColor(64, 64, 64), 1));
     painter.drawPath(path);
-
-    painter.setPen(QPen(QColor(255, 120, 0, 90), 1));
-    painter.drawLine(bounds.topRight().toPoint(), bounds.bottomRight().toPoint());
 }
 
 void LeftWidget::addTab(const QString& tabName, const QString& iconPath, QWidget* parent)
@@ -69,7 +50,7 @@ void LeftWidget::addTab(const QString& tabName, const QString& iconPath, QWidget
 
     connect(tab, &TabWidget::clicked, this, [this, tab, tabName]
     {
-        for(auto* tb : m_tabs)
+        for (auto* tb : m_tabs)
             tb->setActive(false);
 
         tab->setActive(true);
@@ -79,6 +60,5 @@ void LeftWidget::addTab(const QString& tabName, const QString& iconPath, QWidget
     });
 
     m_tabs.push_back(tab);
-
     m_mainLayout->addWidget(tab);
 }

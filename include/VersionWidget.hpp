@@ -34,6 +34,7 @@ signals:
     void clicked(VersionWidget* widget);
     void installVersion(const QString& tagName, const QString& downloadLink);
     void chooseVersion(const QString& tagName);
+    void deleteVersion(const QString& tagName);
 
 protected:
     void mousePressEvent(QMouseEvent* event) override;
@@ -46,6 +47,7 @@ private:
     QString m_tagName;
 
     FireButton* m_button{nullptr};
+    FireButton* m_deleteButton{nullptr};
     QLabel* m_labelIcon{nullptr};
     VelixText* m_nameLabel{nullptr};
     VelixText* m_statusLabel{nullptr};

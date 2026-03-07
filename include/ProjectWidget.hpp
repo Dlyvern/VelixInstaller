@@ -27,10 +27,12 @@ protected:
 
 signals:
     void openRequested(const QString& projectPath);
+    void removeRequested(const QString& projectFilePath);
 
 private:
     project::ProjectData m_projectData;
     FireButton* m_openButton{nullptr};
+    FireButton* m_removeButton{nullptr};
     VelixText* m_projectNameLabel{nullptr};
     VelixText* m_projectPathLabel{nullptr};
     QPixmap m_logo;

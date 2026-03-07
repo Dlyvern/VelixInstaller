@@ -22,6 +22,12 @@
 
 #include "FireButton.hpp"
 #include "widgets/VelixText.hpp"
+#include "ProjectSettingsDialog.hpp"
+#include "CrashReportDialog.hpp"
+#include "VelixConfirmDialog.hpp"
+#include "ToastNotification.hpp"
+
+#include <QLineEdit>
 
 namespace
 {
@@ -113,6 +119,29 @@ ProjectsWidget::ProjectsWidget(QWidget* parent) : QWidget(parent)
 
     mainLayout->addLayout(headerLayout);
 
+    // ── Search bar ────────────────────────────────────────────────────────────
+    m_searchBar = new QLineEdit(this);
+    m_searchBar->setPlaceholderText("Search projects...");
+    m_searchBar->setFixedHeight(34);
+    m_searchBar->setStyleSheet(
+        "QLineEdit {"
+        "  background-color: #1e1e1e;"
+        "  border: 1px solid #3a3a3a;"
+        "  border-radius: 7px;"
+        "  color: #dcdcdc;"
+        "  padding: 0 12px;"
+        "  font-size: 12px;"
+        "}"
+        "QLineEdit:focus {"
+        "  border-color: #e04800;"
+        "}"
+        "QLineEdit::placeholder {"
+        "  color: #606060;"
+        "}"
+    );
+    connect(m_searchBar, &QLineEdit::textChanged, this, &ProjectsWidget::onSearchTextChanged);
+    mainLayout->addWidget(m_searchBar);
+
     auto* scrollArea = new QScrollArea(this);
     scrollArea->setWidgetResizable(true);
     scrollArea->setFrameShape(QFrame::NoFrame);
@@ -171,7 +200,8 @@ QString ProjectsWidget::defaultProjectsRoot() const
     return QDir::home().filePath("Documents/ElixProjects");
 }
 
-bool ProjectsWidget::createProject(const QString& parentDir, const QString& projectName, project::ProjectData& outProject)
+bool ProjectsWidget::createProject(const QString& parentDir, const QString& projectName,
+                                    const nlohmann::json& settingsJson, project::ProjectData& outProject)
 {
     const QString trimmedName = projectName.trimmed();
     if (trimmedName.isEmpty())
@@ -223,6 +253,13 @@ bool ProjectsWidget::createProject(const QString& parentDir, const QString& proj
             return false;
 
         projectFile << projectFileJson.dump(4);
+    }
+
+    {
+        const QString settingsFilePath = QDir(projectDir).filePath("project.settings");
+        std::ofstream settingsFile(settingsFilePath.toStdString());
+        if (settingsFile)
+            settingsFile << settingsJson.dump(4);
     }
 
     outProject.name = trimmedName.toStdString();
@@ -313,6 +350,7 @@ void ProjectsWidget::addProjectCard(const project::ProjectData& projectData)
 
     auto* projectCard = new ProjectWidget(projectData, this);
     connect(projectCard, &ProjectWidget::openRequested, this, &ProjectsWidget::onOpenProjectPath);
+    connect(projectCard, &ProjectWidget::removeRequested, this, &ProjectsWidget::onRemoveProjectRequested);
 
     const int insertIndex = std::max(0, m_projectsLayout->count() - 1);
     m_projectsLayout->insertWidget(insertIndex, projectCard);
@@ -341,6 +379,17 @@ void ProjectsWidget::loadProjectsFromConfig()
     }
 }
 
+void ProjectsWidget::onSearchTextChanged(const QString& text)
+{
+    const QString lower = text.trimmed().toLower();
+    for (auto* card : m_projectWidgets)
+    {
+        const bool visible = lower.isEmpty() ||
+            QString::fromStdString(card->getProjectData().name).toLower().contains(lower);
+        card->setVisible(visible);
+    }
+}
+
 void ProjectsWidget::onCreateProjectRequested()
 {
     const QString rootDir = QFileDialog::getExistingDirectory(
@@ -366,8 +415,12 @@ void ProjectsWidget::onCreateProjectRequested()
     if (!ok || projectName.trimmed().isEmpty())
         return;
 
+    ProjectSettingsDialog settingsDialog(this);
+    if (settingsDialog.exec() != QDialog::Accepted)
+        return;
+
     project::ProjectData projectData;
-    if (!createProject(rootDir, projectName, projectData))
+    if (!createProject(rootDir, projectName, settingsDialog.toSettingsJson(), projectData))
     {
         QMessageBox::warning(this, "Create Project", "Failed to create project. Check path and permissions.");
         return;
@@ -460,8 +513,32 @@ void ProjectsWidget::onOpenProjectPath(const QString& projectPath)
         return;
     }
 
-    if (!QProcess::startDetached(executablePath, {projectPath}))
+    auto* process = new QProcess(this);
+    process->setReadChannel(QProcess::StandardError);
+
+    connect(process, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), this,
+        [this, process, executablePath](int exitCode, QProcess::ExitStatus exitStatus)
+        {
+            if (exitStatus == QProcess::CrashExit || exitCode != 0)
+            {
+                QString crashInfo = QString::fromLocal8Bit(process->readAllStandardError()).trimmed();
+                if (crashInfo.isEmpty())
+                    crashInfo = QString::fromLocal8Bit(process->readAllStandardOutput()).trimmed();
+                if (crashInfo.isEmpty())
+                    crashInfo = QString("Process '%1' exited with code %2.").arg(executablePath).arg(exitCode);
+
+                auto* dialog = new CrashReportDialog(crashInfo, exitCode, this);
+                dialog->setAttribute(Qt::WA_DeleteOnClose);
+                dialog->exec();
+            }
+            process->deleteLater();
+        });
+
+    process->start(executablePath, {projectPath});
+
+    if (!process->waitForStarted(3000))
     {
+        process->deleteLater();
         QMessageBox::warning(
             this,
             "Open Project",
@@ -524,4 +601,68 @@ QString ProjectsWidget::resolveExecutableFromInstallPath(const QString& installP
     }
 
     return {};
+}
+
+void ProjectsWidget::onRemoveProjectRequested(const QString& projectFilePath)
+{
+    const QString normalizedFile = QFileInfo(projectFilePath).absoluteFilePath();
+
+    // Find the widget to get the project name for the dialog
+    ProjectWidget* card = nullptr;
+    for (auto* w : m_projectWidgets)
+    {
+        if (QFileInfo(QString::fromStdString(w->getProjectData().projectFilePath)).absoluteFilePath() == normalizedFile)
+        {
+            card = w;
+            break;
+        }
+    }
+
+    const QString projectName = card
+        ? QString::fromStdString(card->getProjectData().name)
+        : QFileInfo(projectFilePath).dir().dirName();
+
+    if (!VelixConfirmDialog::ask(
+            "Remove Project",
+            QString("Remove \"%1\" from the project list?\n\nThe project files on disk will not be deleted.").arg(projectName),
+            "Remove",
+            "Cancel",
+            this))
+    {
+        return;
+    }
+
+    // Remove from config
+    auto& config = m_config.mutableConfig();
+    if (config.contains("projects") && config["projects"].is_array())
+    {
+        auto& projects = config["projects"];
+        for (auto it = projects.begin(); it != projects.end(); ++it)
+        {
+            if (it->contains("project_file") && (*it)["project_file"].is_string())
+            {
+                const QString cfgFile = QFileInfo(
+                    QString::fromStdString((*it)["project_file"].get<std::string>())
+                ).absoluteFilePath();
+
+                if (cfgFile == normalizedFile)
+                {
+                    projects.erase(it);
+                    break;
+                }
+            }
+        }
+    }
+    m_config.save();
+
+    // Remove widget and known path
+    if (card)
+    {
+        const QString normalizedPath = normalizedAbsolutePath(
+            QString::fromStdString(card->getProjectData().path));
+        m_knownProjectPaths.remove(normalizedPath);
+        m_projectWidgets.removeOne(card);
+        m_projectsLayout->removeWidget(card);
+        card->deleteLater();
+    }
 }
