@@ -70,6 +70,40 @@ SettingsWidget::SettingsWidget(QWidget* parent) : QWidget(parent)
     panelLayout->addWidget(m_statusLabel, 0, Qt::AlignLeft);
 
     mainLayout->addWidget(panelFrame);
+
+    auto* appearanceFrame = new QFrame(this);
+    appearanceFrame->setFrameShape(QFrame::NoFrame);
+    appearanceFrame->setAutoFillBackground(true);
+    QPalette appearancePalette = appearanceFrame->palette();
+    appearancePalette.setColor(QPalette::Window, QColor(26, 26, 26, 235));
+    appearanceFrame->setPalette(appearancePalette);
+
+    auto* appearanceLayout = new QVBoxLayout(appearanceFrame);
+    appearanceLayout->setContentsMargins(14, 14, 14, 14);
+    appearanceLayout->setSpacing(8);
+
+    auto* appearanceTitle = new VelixText("Appearance", appearanceFrame);
+    appearanceTitle->setPointSize(10);
+    appearanceTitle->setTextColor(QColor(160, 160, 160));
+    appearanceLayout->addWidget(appearanceTitle);
+
+    m_splashCheckBox = new QCheckBox("Show startup animation", appearanceFrame);
+    m_splashCheckBox->setStyleSheet(
+        "QCheckBox { color: #e0e0e0; font-size: 10pt; spacing: 8px; }"
+        "QCheckBox::indicator { width: 16px; height: 16px; border-radius: 4px;"
+        "  border: 1px solid #555; background: #2a2a2a; }"
+        "QCheckBox::indicator:checked { background: #ff8c1e; border-color: #ff8c1e; }"
+        "QCheckBox::indicator:hover { border-color: #ff8c1e; }"
+    );
+
+    const auto& cfg = m_config.getConfig();
+    const bool splashEnabled = !cfg.contains("splash_enabled") || cfg["splash_enabled"].get<bool>();
+    m_splashCheckBox->setChecked(splashEnabled);
+
+    connect(m_splashCheckBox, &QCheckBox::toggled, this, &SettingsWidget::onSplashToggled);
+    appearanceLayout->addWidget(m_splashCheckBox);
+
+    mainLayout->addWidget(appearanceFrame);
     mainLayout->addStretch(1);
 
     reloadInstalledVersions();
@@ -149,6 +183,13 @@ void SettingsWidget::onVersionSelectionChanged(int index)
         m_statusLabel->setText(QString("Default version for opening projects: %1").arg(selectedVersion));
     else
         m_statusLabel->setText("Failed to save default version to config.");
+}
+
+void SettingsWidget::onSplashToggled(bool checked)
+{
+    auto& config = m_config.mutableConfig();
+    config["splash_enabled"] = checked;
+    m_config.save();
 }
 
 void SettingsWidget::paintEvent(QPaintEvent* event)

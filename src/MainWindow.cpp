@@ -1,7 +1,9 @@
 #include "MainWindow.hpp"
 #include <QHBoxLayout>
+#include <QResizeEvent>
 
 #include "Separator.hpp"
+#include "Config.hpp"
 
 MainWindow::MainWindow(QWidget* widget) : QMainWindow(widget)
 {
@@ -34,6 +36,25 @@ MainWindow::MainWindow(QWidget* widget) : QMainWindow(widget)
     connect(m_leftWidget, &LeftWidget::tabWidgetChanged, m_mainWidget, &MainWidget::changeWidget);
 
     setMinimumSize(900, 620);
+
+    Config splashCfg;
+    splashCfg.load();
+    const auto& splashJson = splashCfg.getConfig();
+    const bool splashEnabled = !splashJson.contains("splash_enabled") || splashJson["splash_enabled"].get<bool>();
+
+    if (splashEnabled)
+    {
+        m_splash = new SplashOverlay(mainWidget);
+        m_splash->raise();
+        m_splash->show();
+    }
+}
+
+void MainWindow::resizeEvent(QResizeEvent* event)
+{
+    QMainWindow::resizeEvent(event);
+    if (m_splash)
+        m_splash->setGeometry(centralWidget()->rect());
 }
 
 void MainWindow::paintEvent(QPaintEvent*)

@@ -3,6 +3,7 @@
 
 #include <QWidget>
 #include <QComboBox>
+#include <QCheckBox>
 #include <QVBoxLayout>
 
 #include "Config.hpp"
@@ -24,12 +25,14 @@ protected:
 
 private slots:
     void onVersionSelectionChanged(int index);
+    void onSplashToggled(bool checked);
 
 private:
-    Config m_config;
+    Config     m_config;
     QComboBox* m_versionCombo{nullptr};
     VelixText* m_statusLabel{nullptr};
-    bool m_isReloading{false};
+    QCheckBox* m_splashCheckBox{nullptr};
+    bool       m_isReloading{false};
 };
 
 #endif //SETTINGS_WIDGET_HPP
