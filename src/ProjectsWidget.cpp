@@ -15,6 +15,7 @@
 #include <QPainterPath>
 #include <QPalette>
 #include <QProcess>
+#include <QProcessEnvironment>
 
 #include <fstream>
 #include <filesystem>
@@ -244,6 +245,8 @@ bool ProjectsWidget::createProject(const QString& parentDir, const QString& proj
         {"path", projectPathWithSlash.toStdString()},
         {"resources_path", QDir(absoluteProjectPath).filePath("Resources").toStdString()},
         {"sources_path", QDir(absoluteProjectPath).filePath("Sources").toStdString()},
+        {"build_dir", QDir(absoluteProjectPath).filePath("build").toStdString()},
+        {"scenes_dir", absoluteProjectPath.toStdString()},
         {"name", trimmedName.toStdString()}
     };
 
@@ -515,6 +518,21 @@ void ProjectsWidget::onOpenProjectPath(const QString& projectPath)
 
     auto* process = new QProcess(this);
     process->setReadChannel(QProcess::StandardError);
+
+    // Prepend the executable's directory to the platform library search path
+    // so bundled shared libraries (e.g. libfmod) are found regardless of the
+    // environment the installer was launched in.
+    const QString execDir = QFileInfo(executablePath).absolutePath();
+    QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+#if defined(_WIN32)
+    const QString existingPath = env.value("PATH");
+    env.insert("PATH", existingPath.isEmpty() ? execDir : execDir + ";" + existingPath);
+#else
+    const QString existingLdPath = env.value("LD_LIBRARY_PATH");
+    env.insert("LD_LIBRARY_PATH",
+               existingLdPath.isEmpty() ? execDir : execDir + ":" + existingLdPath);
+#endif
+    process->setProcessEnvironment(env);
 
     connect(process, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), this,
         [this, process, executablePath](int exitCode, QProcess::ExitStatus exitStatus)

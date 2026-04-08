@@ -178,6 +178,35 @@ void addCheck(QVBoxLayout* layout, QCheckBox* check, const QString& label)
     check->setText(label);
     layout->addWidget(check);
 }
+
+static const QString kComboStyle = R"(
+QComboBox {
+    background-color: #1c1c1c;
+    border: 1px solid #424242;
+    border-radius: 5px;
+    color: #dcdcdc;
+    padding: 3px 8px;
+    min-height: 26px;
+    font-size: 12px;
+}
+QComboBox:focus { border-color: #e04800; }
+QComboBox::drop-down { border: none; width: 20px; }
+QComboBox QAbstractItemView {
+    background-color: #1c1c1c;
+    color: #dcdcdc;
+    selection-background-color: #e04800;
+}
+)";
+
+QComboBox* makeCombo(QWidget* parent, const QStringList& items, int defaultIndex = 0)
+{
+    auto* combo = new QComboBox(parent);
+    combo->setStyleSheet(kComboStyle);
+    combo->addItems(items);
+    combo->setCurrentIndex(defaultIndex);
+    combo->setFixedWidth(150);
+    return combo;
+}
 } // namespace
 
 ProjectSettingsDialog::ProjectSettingsDialog(QWidget* parent)
@@ -307,13 +336,14 @@ QWidget* ProjectSettingsDialog::buildRenderingTab()
 
     int row = 0;
     m_renderScaleSpin = makeDoubleSpin(0.25, 2.0, 0.05, 1.0, genGroup);
-    m_anisotropySpin  = makeIntSpin(1, 16, 4, genGroup);
     addRow(genGrid, row, "Render Scale", m_renderScaleSpin);
-    addRow(genGrid, row, "Anisotropy", m_anisotropySpin);
+
+    m_anisotropyCombo = makeCombo(genGroup, {"Off", "2×", "4×", "8×", "16×"}, 2);
+    addRow(genGrid, row, "Anisotropy", m_anisotropyCombo);
 
     auto* flagsLayout = new QHBoxLayout();
     m_vsyncCheck = new QCheckBox(genGroup);  m_vsyncCheck->setText("VSync");
-    m_fxaaCheck  = new QCheckBox(genGroup);  m_fxaaCheck->setText("FXAA");   m_fxaaCheck->setChecked(true);
+    m_fxaaCheck  = new QCheckBox(genGroup);  m_fxaaCheck->setText("FXAA");  m_fxaaCheck->setChecked(true);
     m_smaaCheck  = new QCheckBox(genGroup);  m_smaaCheck->setText("SMAA");
     m_taaCheck   = new QCheckBox(genGroup);  m_taaCheck->setText("TAA");
     flagsLayout->addWidget(m_vsyncCheck);
@@ -326,33 +356,63 @@ QWidget* ProjectSettingsDialog::buildRenderingTab()
 
     mainLayout->addWidget(genGroup);
 
-    // ── SSAO ─────────────────────────────────────────────────────────────────
-    auto* ssaoGroup = new QGroupBox("Ambient Occlusion (SSAO)", content);
-    auto* ssaoLayout = new QVBoxLayout(ssaoGroup);
-    ssaoLayout->setSpacing(8);
+    // ── Ambient Occlusion ────────────────────────────────────────────────────
+    auto* aoGroup = new QGroupBox("Ambient Occlusion", content);
+    auto* aoLayout = new QVBoxLayout(aoGroup);
+    aoLayout->setSpacing(8);
 
-    m_ssaoCheck = new QCheckBox(ssaoGroup);
+    // SSAO
+    m_ssaoCheck = new QCheckBox(aoGroup);
     m_ssaoCheck->setText("Enable SSAO");
     m_ssaoCheck->setChecked(true);
-    ssaoLayout->addWidget(m_ssaoCheck);
+    aoLayout->addWidget(m_ssaoCheck);
 
     auto* ssaoGrid = new QGridLayout();
     ssaoGrid->setColumnStretch(0, 1);
     ssaoGrid->setHorizontalSpacing(16);
     ssaoGrid->setVerticalSpacing(8);
     int sr = 0;
-    m_ssaoRadiusSpin   = makeDoubleSpin(0.01, 5.0, 0.05, 0.5, ssaoGroup);
-    m_ssaoBiasSpin     = makeDoubleSpin(0.001, 0.5, 0.005, 0.025, ssaoGroup);
-    m_ssaoSamplesSpin  = makeIntSpin(4, 128, 32, ssaoGroup);
-    m_ssaoStrengthSpin = makeDoubleSpin(0.1, 5.0, 0.1, 1.2, ssaoGroup);
+    m_ssaoRadiusSpin   = makeDoubleSpin(0.01, 5.0, 0.05, 0.5, aoGroup);
+    m_ssaoBiasSpin     = makeDoubleSpin(0.001, 0.5, 0.005, 0.025, aoGroup);
+    m_ssaoSamplesSpin  = makeIntSpin(4, 128, 32, aoGroup);
+    m_ssaoStrengthSpin = makeDoubleSpin(0.1, 5.0, 0.1, 1.2, aoGroup);
     m_ssaoBiasSpin->setDecimals(3);
     addRow(ssaoGrid, sr, "Radius", m_ssaoRadiusSpin);
     addRow(ssaoGrid, sr, "Bias", m_ssaoBiasSpin);
     addRow(ssaoGrid, sr, "Samples", m_ssaoSamplesSpin);
     addRow(ssaoGrid, sr, "Strength", m_ssaoStrengthSpin);
-    ssaoLayout->addLayout(ssaoGrid);
+    aoLayout->addLayout(ssaoGrid);
 
-    mainLayout->addWidget(ssaoGroup);
+    aoLayout->addWidget(makeSeparator(aoGroup));
+
+    // GTAO
+    m_gtaoCheck = new QCheckBox(aoGroup);
+    m_gtaoCheck->setText("Enable GTAO (Ground-Truth AO)");
+    aoLayout->addWidget(m_gtaoCheck);
+
+    auto* gtaoGrid = new QGridLayout();
+    gtaoGrid->setColumnStretch(0, 1);
+    gtaoGrid->setHorizontalSpacing(16);
+    gtaoGrid->setVerticalSpacing(8);
+    int gr = 0;
+    m_gtaoDirectionsSpin = makeIntSpin(2, 8, 4, aoGroup);
+    m_gtaoStepsSpin      = makeIntSpin(2, 8, 4, aoGroup);
+    addRow(gtaoGrid, gr, "Directions", m_gtaoDirectionsSpin);
+    addRow(gtaoGrid, gr, "Steps", m_gtaoStepsSpin);
+    aoLayout->addLayout(gtaoGrid);
+
+    m_bentNormalsCheck = new QCheckBox(aoGroup);
+    m_bentNormalsCheck->setText("Use Bent Normals (requires GTAO)");
+    aoLayout->addWidget(m_bentNormalsCheck);
+
+    connect(m_gtaoCheck, &QCheckBox::toggled, m_gtaoDirectionsSpin, &QWidget::setEnabled);
+    connect(m_gtaoCheck, &QCheckBox::toggled, m_gtaoStepsSpin,      &QWidget::setEnabled);
+    connect(m_gtaoCheck, &QCheckBox::toggled, m_bentNormalsCheck,   &QWidget::setEnabled);
+    m_gtaoDirectionsSpin->setEnabled(false);
+    m_gtaoStepsSpin->setEnabled(false);
+    m_bentNormalsCheck->setEnabled(false);
+
+    mainLayout->addWidget(aoGroup);
 
     // ── Bloom ────────────────────────────────────────────────────────────────
     auto* bloomGroup = new QGroupBox("Bloom", content);
@@ -379,6 +439,32 @@ QWidget* ProjectSettingsDialog::buildRenderingTab()
 
     mainLayout->addWidget(bloomGroup);
 
+    // ── SSR ──────────────────────────────────────────────────────────────────
+    auto* ssrGroup = new QGroupBox("Screen Space Reflections (SSR)", content);
+    auto* ssrLayout = new QVBoxLayout(ssrGroup);
+    ssrLayout->setSpacing(8);
+
+    m_ssrCheck = new QCheckBox(ssrGroup);
+    m_ssrCheck->setText("Enable SSR");
+    ssrLayout->addWidget(m_ssrCheck);
+
+    auto* ssrGrid = new QGridLayout();
+    ssrGrid->setColumnStretch(0, 1);
+    ssrGrid->setHorizontalSpacing(16);
+    ssrGrid->setVerticalSpacing(8);
+    int sr2 = 0;
+    m_ssrMaxDistanceSpin     = makeDoubleSpin(1.0, 100.0, 1.0, 15.0, ssrGroup);
+    m_ssrStepsSpin           = makeIntSpin(8, 256, 64, ssrGroup);
+    m_ssrStrengthSpin        = makeDoubleSpin(0.0, 1.0, 0.05, 0.8, ssrGroup);
+    m_ssrRoughnessCutoffSpin = makeDoubleSpin(0.05, 0.8, 0.05, 0.3, ssrGroup);
+    addRow(ssrGrid, sr2, "Max Distance",     m_ssrMaxDistanceSpin);
+    addRow(ssrGrid, sr2, "Steps",            m_ssrStepsSpin);
+    addRow(ssrGrid, sr2, "Strength",         m_ssrStrengthSpin);
+    addRow(ssrGrid, sr2, "Roughness Cutoff", m_ssrRoughnessCutoffSpin);
+    ssrLayout->addLayout(ssrGrid);
+
+    mainLayout->addWidget(ssrGroup);
+
     // ── Shadows ──────────────────────────────────────────────────────────────
     auto* shadowGroup = new QGroupBox("Shadows", content);
     auto* shadowLayout = new QVBoxLayout(shadowGroup);
@@ -397,31 +483,116 @@ QWidget* ProjectSettingsDialog::buildRenderingTab()
     m_shadowCascadesSpin = makeIntSpin(1, 8, 4, shadowGroup);
     m_shadowMaxDistSpin  = makeDoubleSpin(10.0, 2000.0, 10.0, 180.0, shadowGroup);
     addRow(shadowGrid, shRow, "Shadow Map Resolution", m_shadowQualitySpin);
-    addRow(shadowGrid, shRow, "Cascade Count", m_shadowCascadesSpin);
-    addRow(shadowGrid, shRow, "Max Distance", m_shadowMaxDistSpin);
+    addRow(shadowGrid, shRow, "Cascade Count",         m_shadowCascadesSpin);
+    addRow(shadowGrid, shRow, "Max Distance",          m_shadowMaxDistSpin);
     shadowLayout->addLayout(shadowGrid);
 
     mainLayout->addWidget(shadowGroup);
 
-    // ── Post-processing ───────────────────────────────────────────────────────
+    // ── Volumetric Fog ───────────────────────────────────────────────────────
+    auto* fogGroup = new QGroupBox("Volumetric Fog", content);
+    auto* fogGrid  = new QGridLayout(fogGroup);
+    fogGrid->setColumnStretch(0, 1);
+    fogGrid->setHorizontalSpacing(16);
+    fogGrid->setVerticalSpacing(8);
+
+    int fogRow = 0;
+    m_volumetricFogQualityCombo = makeCombo(fogGroup, {"Off", "Low", "High"}, 0);
+    addRow(fogGrid, fogRow, "Quality", m_volumetricFogQualityCombo);
+
+    m_volumetricFogOverrideCheck = new QCheckBox(fogGroup);
+    m_volumetricFogOverrideCheck->setText("Override scene fog settings");
+    fogGrid->addWidget(m_volumetricFogOverrideCheck, fogRow, 0, 1, 2);
+
+    mainLayout->addWidget(fogGroup);
+
+    // ── Post-Processing ───────────────────────────────────────────────────────
     auto* ppGroup = new QGroupBox("Post-Processing", content);
     auto* ppLayout = new QVBoxLayout(ppGroup);
     ppLayout->setSpacing(6);
 
-    m_postProcessingCheck  = new QCheckBox(ppGroup);
-    m_colorGradingCheck    = new QCheckBox(ppGroup);
-    m_chromAberrationCheck = new QCheckBox(ppGroup);
-    m_vignetteCheck        = new QCheckBox(ppGroup);
-    m_filmGrainCheck       = new QCheckBox(ppGroup);
-    m_gtaoCheck            = new QCheckBox(ppGroup);
-
-    addCheck(ppLayout, m_postProcessingCheck,  "Enable Post-Processing");
+    m_postProcessingCheck = new QCheckBox(ppGroup);
+    addCheck(ppLayout, m_postProcessingCheck, "Enable Post-Processing");
     m_postProcessingCheck->setChecked(true);
-    addCheck(ppLayout, m_colorGradingCheck,    "Color Grading");
-    addCheck(ppLayout, m_chromAberrationCheck, "Chromatic Aberration");
-    addCheck(ppLayout, m_vignetteCheck,        "Vignette");
-    addCheck(ppLayout, m_filmGrainCheck,       "Film Grain");
-    addCheck(ppLayout, m_gtaoCheck,            "GTAO (Ground-Truth AO)");
+
+    ppLayout->addWidget(makeSeparator(ppGroup));
+
+    // Color Grading
+    m_colorGradingCheck = new QCheckBox(ppGroup);
+    addCheck(ppLayout, m_colorGradingCheck, "Color Grading");
+
+    auto* cgGrid = new QGridLayout();
+    cgGrid->setColumnStretch(0, 1);
+    cgGrid->setHorizontalSpacing(16);
+    cgGrid->setVerticalSpacing(6);
+    int cgRow = 0;
+    m_cgSaturationSpin  = makeDoubleSpin(0.0,  2.0,  0.05, 1.0, ppGroup);
+    m_cgContrastSpin    = makeDoubleSpin(0.0,  2.0,  0.05, 1.0, ppGroup);
+    m_cgTemperatureSpin = makeDoubleSpin(-1.0, 1.0,  0.05, 0.0, ppGroup);
+    m_cgTintSpin        = makeDoubleSpin(-1.0, 1.0,  0.05, 0.0, ppGroup);
+    addRow(cgGrid, cgRow, "Saturation",  m_cgSaturationSpin);
+    addRow(cgGrid, cgRow, "Contrast",    m_cgContrastSpin);
+    addRow(cgGrid, cgRow, "Temperature", m_cgTemperatureSpin);
+    addRow(cgGrid, cgRow, "Tint",        m_cgTintSpin);
+    ppLayout->addLayout(cgGrid);
+
+    connect(m_colorGradingCheck, &QCheckBox::toggled, m_cgSaturationSpin,  &QWidget::setEnabled);
+    connect(m_colorGradingCheck, &QCheckBox::toggled, m_cgContrastSpin,    &QWidget::setEnabled);
+    connect(m_colorGradingCheck, &QCheckBox::toggled, m_cgTemperatureSpin, &QWidget::setEnabled);
+    connect(m_colorGradingCheck, &QCheckBox::toggled, m_cgTintSpin,        &QWidget::setEnabled);
+    m_cgSaturationSpin->setEnabled(false);
+    m_cgContrastSpin->setEnabled(false);
+    m_cgTemperatureSpin->setEnabled(false);
+    m_cgTintSpin->setEnabled(false);
+
+    ppLayout->addWidget(makeSeparator(ppGroup));
+
+    // Chromatic Aberration
+    auto* caGrid = new QGridLayout();
+    caGrid->setColumnStretch(0, 1);
+    caGrid->setHorizontalSpacing(16);
+    int caRow = 0;
+    m_chromAberrationCheck = new QCheckBox(ppGroup);
+    m_chromAberrationCheck->setText("Chromatic Aberration");
+    caGrid->addWidget(m_chromAberrationCheck, caRow, 0, 1, 2);
+    ++caRow;
+    m_chromAberrationStrengthSpin = makeDoubleSpin(0.0, 0.02, 0.001, 0.003, ppGroup);
+    m_chromAberrationStrengthSpin->setDecimals(3);
+    m_chromAberrationStrengthSpin->setEnabled(false);
+    addRow(caGrid, caRow, "Strength", m_chromAberrationStrengthSpin);
+    ppLayout->addLayout(caGrid);
+    connect(m_chromAberrationCheck, &QCheckBox::toggled, m_chromAberrationStrengthSpin, &QWidget::setEnabled);
+
+    // Vignette
+    auto* vigGrid = new QGridLayout();
+    vigGrid->setColumnStretch(0, 1);
+    vigGrid->setHorizontalSpacing(16);
+    int vigRow = 0;
+    m_vignetteCheck = new QCheckBox(ppGroup);
+    m_vignetteCheck->setText("Vignette");
+    vigGrid->addWidget(m_vignetteCheck, vigRow, 0, 1, 2);
+    ++vigRow;
+    m_vignetteStrengthSpin = makeDoubleSpin(0.0, 1.0, 0.05, 0.4, ppGroup);
+    m_vignetteStrengthSpin->setEnabled(false);
+    addRow(vigGrid, vigRow, "Strength", m_vignetteStrengthSpin);
+    ppLayout->addLayout(vigGrid);
+    connect(m_vignetteCheck, &QCheckBox::toggled, m_vignetteStrengthSpin, &QWidget::setEnabled);
+
+    // Film Grain
+    auto* fgGrid = new QGridLayout();
+    fgGrid->setColumnStretch(0, 1);
+    fgGrid->setHorizontalSpacing(16);
+    int fgRow = 0;
+    m_filmGrainCheck = new QCheckBox(ppGroup);
+    m_filmGrainCheck->setText("Film Grain");
+    fgGrid->addWidget(m_filmGrainCheck, fgRow, 0, 1, 2);
+    ++fgRow;
+    m_filmGrainStrengthSpin = makeDoubleSpin(0.0, 0.2, 0.005, 0.03, ppGroup);
+    m_filmGrainStrengthSpin->setDecimals(3);
+    m_filmGrainStrengthSpin->setEnabled(false);
+    addRow(fgGrid, fgRow, "Strength", m_filmGrainStrengthSpin);
+    ppLayout->addLayout(fgGrid);
+    connect(m_filmGrainCheck, &QCheckBox::toggled, m_filmGrainStrengthSpin, &QWidget::setEnabled);
 
     mainLayout->addWidget(ppGroup);
     mainLayout->addStretch(1);
@@ -465,20 +636,60 @@ QWidget* ProjectSettingsDialog::buildRtxTab()
     rtxLayout->setSpacing(10);
 
     m_rtxCheck = new QCheckBox(rtxGroup);
-    m_rtxCheck->setText("Enable RTX (Ray Tracing)");
-    m_rtxCheck->setEnabled(false); // Feature placeholder — not active yet
+    m_rtxCheck->setText("Enable Ray Tracing");
+    m_rtxCheck->setEnabled(m_rtxCapable);
     rtxLayout->addWidget(m_rtxCheck);
 
-    auto* placeholderLabel = new VelixText(
-        "RTX support is coming in a future update.\n"
-        "This option will enable hardware-accelerated ray tracing, reflections, and global illumination.",
-        rtxGroup
-    );
-    placeholderLabel->setPointSize(9);
-    placeholderLabel->setBold(false);
-    placeholderLabel->setTextColor(QColor(120, 120, 120));
-    placeholderLabel->setWordWrap(true);
-    rtxLayout->addWidget(placeholderLabel);
+    auto* rtModeGrid = new QGridLayout();
+    rtModeGrid->setColumnStretch(0, 1);
+    rtModeGrid->setHorizontalSpacing(16);
+    rtModeGrid->setVerticalSpacing(8);
+    int rtRow = 0;
+
+    m_rtModeCombo = makeCombo(rtxGroup, {"Ray Query (Hybrid)", "Pipeline (Full RT)"});
+    m_rtModeCombo->setFixedWidth(160);
+    m_rtModeCombo->setEnabled(m_rtxCapable);
+    auto* rtModeLbl = new QLabel("Ray Tracing Mode", rtxGroup);
+    rtModeGrid->addWidget(rtModeLbl, rtRow, 0, Qt::AlignVCenter);
+    rtModeGrid->addWidget(m_rtModeCombo, rtRow, 1, Qt::AlignVCenter);
+    ++rtRow;
+
+    rtxLayout->addLayout(rtModeGrid);
+    rtxLayout->addSpacing(4);
+
+    auto* rtFeaturesGroup = new QGroupBox("Features", rtxGroup);
+    auto* rtFeaturesLayout = new QVBoxLayout(rtFeaturesGroup);
+    rtFeaturesLayout->setSpacing(6);
+
+    m_rtShadowsCheck = new QCheckBox(rtFeaturesGroup);
+    m_rtShadowsCheck->setText("RT Shadows");
+    m_rtShadowsCheck->setEnabled(m_rtxCapable);
+    rtFeaturesLayout->addWidget(m_rtShadowsCheck);
+
+    m_rtReflectionsCheck = new QCheckBox(rtFeaturesGroup);
+    m_rtReflectionsCheck->setText("RT Reflections");
+    m_rtReflectionsCheck->setEnabled(m_rtxCapable);
+    rtFeaturesLayout->addWidget(m_rtReflectionsCheck);
+
+    rtxLayout->addWidget(rtFeaturesGroup);
+
+    // Disable sub-options when main RT toggle is off
+    connect(m_rtxCheck, &QCheckBox::toggled, m_rtModeCombo,       &QWidget::setEnabled);
+    connect(m_rtxCheck, &QCheckBox::toggled, m_rtShadowsCheck,    &QWidget::setEnabled);
+    connect(m_rtxCheck, &QCheckBox::toggled, m_rtReflectionsCheck,&QWidget::setEnabled);
+
+    if (!m_rtxCapable)
+    {
+        auto* noRtxLabel = new VelixText(
+            "No RTX-capable GPU detected. Ray tracing settings will have no effect at runtime.",
+            rtxGroup
+        );
+        noRtxLabel->setPointSize(9);
+        noRtxLabel->setBold(false);
+        noRtxLabel->setTextColor(QColor(160, 100, 80));
+        noRtxLabel->setWordWrap(true);
+        rtxLayout->addWidget(noRtxLabel);
+    }
 
     mainLayout->addWidget(rtxGroup);
     mainLayout->addStretch(1);
@@ -518,7 +729,7 @@ nlohmann::json ProjectSettingsDialog::toSettingsJson() const
 
     j["render_settings"] = {
         {"render_scale",                m_renderScaleSpin->value()},
-        {"anisotropy_mode",             m_anisotropySpin->value()},
+        {"anisotropy_mode",             m_anisotropyCombo->currentIndex()},
         {"enable_vsync",                m_vsyncCheck->isChecked()},
         {"enable_fxaa",                 m_fxaaCheck->isChecked()},
         {"enable_smaa",                 m_smaaCheck->isChecked()},
@@ -530,11 +741,22 @@ nlohmann::json ProjectSettingsDialog::toSettingsJson() const
         {"ssao_bias",                   m_ssaoBiasSpin->value()},
         {"ssao_samples",                m_ssaoSamplesSpin->value()},
         {"ssao_strength",               m_ssaoStrengthSpin->value()},
+        {"enable_gtao",                 m_gtaoCheck->isChecked()},
+        {"gtao_directions",             m_gtaoDirectionsSpin->value()},
+        {"gtao_steps",                  m_gtaoStepsSpin->value()},
+        {"use_bent_normals",            m_bentNormalsCheck->isChecked()},
 
         {"enable_bloom",                m_bloomCheck->isChecked()},
         {"bloom_strength",              m_bloomStrengthSpin->value()},
         {"bloom_threshold",             m_bloomThresholdSpin->value()},
         {"bloom_knee",                  m_bloomKneeSpin->value()},
+
+        {"enable_ssr",                  m_ssrCheck->isChecked()},
+        {"ssr_max_distance",            m_ssrMaxDistanceSpin->value()},
+        {"ssr_steps",                   m_ssrStepsSpin->value()},
+        {"ssr_strength",                m_ssrStrengthSpin->value()},
+        {"ssr_thickness",               0.05},
+        {"ssr_roughness_cutoff",        m_ssrRoughnessCutoffSpin->value()},
 
         {"shadow_quality",              m_shadowQualitySpin->value()},
         {"shadow_cascade_count",        m_shadowCascadesSpin->value()},
@@ -545,23 +767,27 @@ nlohmann::json ProjectSettingsDialog::toSettingsJson() const
         {"contact_shadow_steps",        16},
         {"contact_shadow_strength",     0.8},
 
+        {"volumetric_fog_quality",                m_volumetricFogQualityCombo->currentIndex()},
+        {"override_volumetric_fog_scene_setting", m_volumetricFogOverrideCheck->isChecked()},
+        {"volumetric_fog_override_enabled",       m_volumetricFogOverrideCheck->isChecked()},
+
         {"enable_post_processing",      m_postProcessingCheck->isChecked()},
         {"enable_color_grading",        m_colorGradingCheck->isChecked()},
-        {"color_grading_contrast",      1.0},
-        {"color_grading_saturation",    1.0},
-        {"color_grading_temperature",   0.0},
-        {"color_grading_tint",          0.0},
+        {"color_grading_saturation",    m_cgSaturationSpin->value()},
+        {"color_grading_contrast",      m_cgContrastSpin->value()},
+        {"color_grading_temperature",   m_cgTemperatureSpin->value()},
+        {"color_grading_tint",          m_cgTintSpin->value()},
         {"enable_chromatic_aberration", m_chromAberrationCheck->isChecked()},
-        {"chromatic_aberration_strength",0.003},
+        {"chromatic_aberration_strength",m_chromAberrationStrengthSpin->value()},
         {"enable_vignette",             m_vignetteCheck->isChecked()},
-        {"vignette_strength",           0.4},
+        {"vignette_strength",           m_vignetteStrengthSpin->value()},
         {"enable_film_grain",           m_filmGrainCheck->isChecked()},
-        {"film_grain_strength",         0.03},
-        {"enable_gtao",                 m_gtaoCheck->isChecked()},
-        {"gtao_directions",             4},
-        {"gtao_steps",                  4},
+        {"film_grain_strength",         m_filmGrainStrengthSpin->value()},
 
-        {"taa_history_weight",          0.9}
+        {"enable_ray_tracing",          m_rtxCheck->isChecked()},
+        {"enable_rt_shadows",           m_rtShadowsCheck->isChecked()},
+        {"enable_rt_reflections",       m_rtReflectionsCheck->isChecked()},
+        {"ray_tracing_mode",            m_rtModeCombo->currentIndex() + 1}
     };
 
     j["version"] = 1;
