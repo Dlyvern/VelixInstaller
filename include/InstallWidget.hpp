@@ -35,6 +35,7 @@ private:
     QString m_currentDownloadTag;
     QString m_currentInstallPath;
     bool m_downloadInProgress{false};
+    VelixText* m_noInternetLabel{nullptr};
 
     void bindDownloadHandlers();
     QString chooseInstallDirectory(const QString& tagName);
@@ -45,6 +46,8 @@ private:
 
 private slots:
     void onNewVersion(const QString &tagName, const QString &downloadLink);
+    void onReleaseFetchFailed();
+    void onAddDevBuild();
 
     void onChooseVersion(const QString& tagName);
     void onDownloadVersion(const QString& tagName, const QString& downloadLink);

@@ -26,6 +26,7 @@ private slots:
 
 signals:
     void newVersionFound(const QString& tagName,  const QString& downloadLink);
+    void releaseFetchFailed();
     void downloadProgressChanged(qint64 bytesReceived, qint64 bytesTotal);
     void downloadDataReady(const QByteArray& chunk);
     void downloadFinished();

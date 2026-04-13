@@ -76,9 +76,10 @@ void ReleaseChecker::onFinished(QNetworkReply* reply)
     if (!requestUrl.toString().contains("/repos/Dlyvern/Velix/releases"))
         return;
 
-    if (reply->error() != QNetworkReply::NoError) 
+    if (reply->error() != QNetworkReply::NoError)
     {
         qWarning() << "Error:" << reply->errorString();
+        emit releaseFetchFailed();
         return;
     }
 

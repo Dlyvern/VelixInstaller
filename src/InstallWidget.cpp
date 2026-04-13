@@ -9,6 +9,7 @@
 #include <QDir>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QInputDialog>
 #include <QProcess>
 #include <QDebug>
 
@@ -40,6 +41,7 @@ InstallWidget::InstallWidget(QWidget* parent) : QWidget(parent)
     m_installer.init();
 
     connect(m_releaseChecker, &ReleaseChecker::newVersionFound, this, &InstallWidget::onNewVersion);
+    connect(m_releaseChecker, &ReleaseChecker::releaseFetchFailed, this, &InstallWidget::onReleaseFetchFailed);
     bindDownloadHandlers();
 
     m_mainLayout = new QVBoxLayout(this);
@@ -50,17 +52,41 @@ InstallWidget::InstallWidget(QWidget* parent) : QWidget(parent)
     m_speedLabel = new VelixText(this);
     m_speedLabel->setPointSize(10);
 
-    m_mainLayout->addWidget(textLabel);
+    m_noInternetLabel = new VelixText("No internet connection — available versions cannot be loaded.", this);
+    m_noInternetLabel->setPointSize(10);
+    m_noInternetLabel->setTextColor(QColor(200, 80, 40));
+    m_noInternetLabel->hide();
 
+    m_mainLayout->addWidget(textLabel);
+    m_mainLayout->addWidget(m_noInternetLabel);
     m_mainLayout->addWidget(m_versionsWidget);
 
     m_progressBar = new VelixProgressBar(this);
-
     m_progressBar->hide();
 
     m_mainLayout->addWidget(m_progressBar);
-
     m_mainLayout->addWidget(m_speedLabel);
+
+    // ── Developer: add a local build ────────────────────────────────────────
+    auto* devSeparator = new QWidget(this);
+    devSeparator->setFixedHeight(1);
+    devSeparator->setStyleSheet("background-color: #2e2e2e;");
+    m_mainLayout->addWidget(devSeparator);
+
+    auto* devRow = new QHBoxLayout();
+    devRow->setSpacing(10);
+
+    auto* devButton = new FireButton("Add Dev Build", FireButton::Variant::Secondary, this);
+    devButton->setFixedWidth(140);
+    connect(devButton, &QPushButton::clicked, this, &InstallWidget::onAddDevBuild);
+
+    auto* devWarning = new VelixText("[DEV ONLY] Registers a local engine build. Use only if you know what you are doing.", this);
+    devWarning->setPointSize(9);
+    devWarning->setTextColor(QColor(160, 120, 40));
+
+    devRow->addWidget(devButton);
+    devRow->addWidget(devWarning, 1);
+    m_mainLayout->addLayout(devRow);
 
     m_mainLayout->addStretch(10);
 
@@ -358,6 +384,57 @@ void InstallWidget::onDownloadVersion(const QString& tagName, const QString& dow
     m_speedLabel->setText(QString("Downloading %1...").arg(tagName));
 
     m_releaseChecker->download(downloadLink);
+}
+
+void InstallWidget::onReleaseFetchFailed()
+{
+    m_noInternetLabel->show();
+}
+
+void InstallWidget::onAddDevBuild()
+{
+    if (!VelixConfirmDialog::ask(
+            "Developer Feature",
+            "Developer use only.\n\n"
+            "Registers a local engine build from a folder you select. "
+            "No validation is performed.\n\n"
+            "Only proceed if you know what you are doing.",
+            "Continue",
+            "Cancel",
+            this))
+    {
+        return;
+    }
+
+    const QString buildDir = QFileDialog::getExistingDirectory(
+        this,
+        "Select engine build folder",
+        QString(),
+        QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks
+    );
+
+    if (buildDir.isEmpty())
+        return;
+
+    bool ok = false;
+    const QString name = QInputDialog::getText(
+        this,
+        "Dev Build Name",
+        "Enter a label for this build (e.g. dev-local, test-0.1):",
+        QLineEdit::Normal,
+        "dev-local",
+        &ok
+    );
+
+    if (!ok || name.trimmed().isEmpty())
+        return;
+
+    const QString tag = name.trimmed();
+    m_versionsWidget->addNewVersion(tag, "", true);
+    upsertInstalledVersion(tag, buildDir);
+    applyCurrentVersionToWidgets();
+
+    ToastNotification::show(QString("Dev build \"%1\" added").arg(tag), ToastType::Success, this);
 }
 
 void InstallWidget::onDeleteVersion(const QString& tagName)
