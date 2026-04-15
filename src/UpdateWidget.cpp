@@ -2,21 +2,18 @@
 #include "AppVersion.hpp"
 #include "Config.hpp"
 #include "ToastNotification.hpp"
-#include "VelixConfirmDialog.hpp"
 
 #include <QDir>
 #include <QDirIterator>
 #include <QProcess>
 #include <QCoreApplication>
 #include <QHBoxLayout>
-#include <QFrame>
 #include <QPalette>
 #include <QTextStream>
 #include <QDebug>
 
 namespace
 {
-// Recursively copy src directory into dest directory (dest is created if needed).
 void copyDir(const QString& src, const QString& dest)
 {
     QDir().mkpath(dest);
@@ -25,7 +22,7 @@ void copyDir(const QString& src, const QString& dest)
     while (it.hasNext())
     {
         it.next();
-        const QString rel  = it.filePath().mid(src.length() + 1);
+        const QString rel    = it.filePath().mid(src.length() + 1);
         const QString target = dest + "/" + rel;
         if (it.fileInfo().isDir())
             QDir().mkpath(target);
@@ -37,18 +34,15 @@ void copyDir(const QString& src, const QString& dest)
     }
 }
 
-// Extract the zip, stage the new binary next to the running one, and copy resources/.
-// Returns the staged binary path, or empty on failure.
 QString extractAndStage(const QString& zipPath)
 {
-    const QString appPath   = QCoreApplication::applicationFilePath();
+    const QString appPath    = QCoreApplication::applicationFilePath();
     const QFileInfo appInfo(appPath);
     const QString binaryName = appInfo.fileName();
     const QString installDir = appInfo.dir().absolutePath();
     const QString destPath   = appInfo.dir().filePath(binaryName + ".new");
     const QString extractDir = QDir::tempPath() + "/VelixInstaller_extract";
 
-    // Clean previous extraction.
     QDir(extractDir).removeRecursively();
     QDir().mkpath(extractDir);
 
@@ -65,16 +59,12 @@ QString extractAndStage(const QString& zipPath)
     unzip.waitForFinished(30000);
 #endif
 
-    // ── Find and stage the binary ─────────────────────────────────────────
     QString foundBinary;
-
-    // First: look for a file named exactly like our binary.
     QDirIterator nameIt(extractDir, {binaryName}, QDir::Files,
                         QDirIterator::Subdirectories);
     if (nameIt.hasNext())
         foundBinary = nameIt.next();
 
-    // Fallback (Linux/macOS): first executable file in the tree.
     if (foundBinary.isEmpty())
     {
         QDirIterator exeIt(extractDir, QDir::Files, QDirIterator::Subdirectories);
@@ -96,8 +86,6 @@ QString extractAndStage(const QString& zipPath)
     if (!QFile::copy(foundBinary, destPath))
         return {};
 
-    // ── Copy resources/ folder if present in the zip ──────────────────────
-    // Look for a resources/ dir anywhere in the extraction tree.
     QDirIterator resIt(extractDir, QDir::Dirs | QDir::NoDotAndDotDot,
                        QDirIterator::Subdirectories);
     while (resIt.hasNext())
@@ -114,9 +102,24 @@ QString extractAndStage(const QString& zipPath)
 }
 } // namespace
 
+// ── Tab style ────────────────────────────────────────────────────────────────
+static const char* kTabStyle =
+    "QTabWidget::pane { border: none; background: transparent; }"
+    "QTabBar::tab {"
+    "  background: #2a2a2a; color: #aaa;"
+    "  padding: 6px 18px; border-radius: 6px 6px 0 0;"
+    "  margin-right: 2px; font-size: 10pt;"
+    "}"
+    "QTabBar::tab:selected { background: #ff6a00; color: #fff; }"
+    "QTabBar::tab:hover:!selected { background: #3a3a3a; color: #ddd; }";
+
+// ── Constructor ───────────────────────────────────────────────────────────────
 UpdateWidget::UpdateWidget(AppUpdateChecker* checker, QWidget* parent)
     : QWidget(parent), m_checker(checker)
 {
+    m_stable.skipConfigKey   = "skipped_stable_version";
+    m_unstable.skipConfigKey = "skipped_unstable_version";
+
     auto* mainLayout = new QVBoxLayout(this);
     mainLayout->setContentsMargins(12, 12, 12, 12);
     mainLayout->setSpacing(12);
@@ -126,221 +129,269 @@ UpdateWidget::UpdateWidget(AppUpdateChecker* checker, QWidget* parent)
     titleLabel->setTextColor(Qt::white);
     mainLayout->addWidget(titleLabel, 0, Qt::AlignLeft);
 
-    m_upToDatePanel = new QWidget(this);
-    m_upToDatePanel->setAutoFillBackground(true);
-    QPalette p = m_upToDatePanel->palette();
-    p.setColor(QPalette::Window, QColor(26, 26, 26, 235));
-    m_upToDatePanel->setPalette(p);
-    {
-        auto* l = new QVBoxLayout(m_upToDatePanel);
-        l->setContentsMargins(14, 14, 14, 14);
-        auto* lbl = new VelixText("Checking for updates\u2026", m_upToDatePanel);
-        lbl->setPointSize(10);
-        lbl->setTextColor(QColor(160, 160, 160));
-        m_statusLabel = lbl;
-        l->addWidget(lbl);
-    }
-    mainLayout->addWidget(m_upToDatePanel);
+    m_tabWidget = new QTabWidget(this);
+    m_tabWidget->setStyleSheet(kTabStyle);
+    m_tabWidget->addTab(buildChannelPage(m_stable,   "Stable"),   "Stable");
+    m_tabWidget->addTab(buildChannelPage(m_unstable, "Unstable"), "Unstable");
+    mainLayout->addWidget(m_tabWidget);
 
-    m_updatePanel = new QWidget(this);
-    m_updatePanel->setAutoFillBackground(true);
-    QPalette p2 = m_updatePanel->palette();
-    p2.setColor(QPalette::Window, QColor(26, 26, 26, 235));
-    m_updatePanel->setPalette(p2);
-    m_updatePanel->hide();
+    // Checker connections
+    connect(m_checker, &AppUpdateChecker::stableUpdateAvailable,
+            this, &UpdateWidget::onStableUpdateAvailable);
+    connect(m_checker, &AppUpdateChecker::unstableUpdateAvailable,
+            this, &UpdateWidget::onUnstableUpdateAvailable);
+    connect(m_checker, &AppUpdateChecker::checkFailed,
+            this, &UpdateWidget::onCheckFailed);
+
+    // Download signals routed through m_activeChannel
+    connect(m_checker, &AppUpdateChecker::downloadProgressChanged, this, [this](qint64 recv, qint64 total)
     {
-        auto* panelLayout = new QVBoxLayout(m_updatePanel);
+        if (m_activeChannel && total > 0)
+            m_activeChannel->progressBar->setValue(static_cast<int>(recv * 100 / total));
+    });
+
+    connect(m_checker, &AppUpdateChecker::downloadSpeedChanged, this, [this](double kbps)
+    {
+        if (m_activeChannel)
+            m_activeChannel->speedLabel->setText(QString("%1 KB/s").arg(kbps, 0, 'f', 1));
+    });
+
+    connect(m_checker, &AppUpdateChecker::downloadDataReady, this, [this](const QByteArray& chunk)
+    {
+        if (m_activeChannel && m_activeChannel->downloadFile && m_activeChannel->downloadFile->isOpen())
+            m_activeChannel->downloadFile->write(chunk);
+    });
+
+    connect(m_checker, &AppUpdateChecker::downloadFinished, this, [this]
+    {
+        if (!m_activeChannel) return;
+        if (m_activeChannel->downloadFile)
+        {
+            m_activeChannel->downloadFile->close();
+            m_activeChannel->downloadFile->deleteLater();
+            m_activeChannel->downloadFile = nullptr;
+        }
+        m_activeChannel->speedLabel->setText("Download complete. Preparing update\u2026");
+        applyUpdate();
+    });
+
+    connect(m_checker, &AppUpdateChecker::downloadError, this, [this](const QString& error)
+    {
+        if (!m_activeChannel) return;
+        if (m_activeChannel->downloadFile)
+        {
+            m_activeChannel->downloadFile->close();
+            m_activeChannel->downloadFile->deleteLater();
+            m_activeChannel->downloadFile = nullptr;
+        }
+        m_activeChannel->progressBar->hide();
+        m_activeChannel->speedLabel->hide();
+        m_activeChannel->downloadBtn->setEnabled(true);
+        m_activeChannel->skipBtn->setEnabled(true);
+        m_activeChannel = nullptr;
+        ToastNotification::show("Download failed: " + error, ToastType::Error, this);
+    });
+}
+
+// ── Build a channel page ──────────────────────────────────────────────────────
+QWidget* UpdateWidget::buildChannelPage(Channel& ch, const QString& label)
+{
+    auto* page = new QWidget();
+
+    auto* pageLayout = new QVBoxLayout(page);
+    pageLayout->setContentsMargins(0, 10, 0, 0);
+    pageLayout->setSpacing(8);
+
+    // ── Up-to-date panel ──────────────────────────────────────────────────
+    ch.upToDatePanel = new QWidget(page);
+    ch.upToDatePanel->setAutoFillBackground(true);
+    QPalette p = ch.upToDatePanel->palette();
+    p.setColor(QPalette::Window, QColor(26, 26, 26, 235));
+    ch.upToDatePanel->setPalette(p);
+    {
+        auto* l = new QVBoxLayout(ch.upToDatePanel);
+        l->setContentsMargins(14, 14, 14, 14);
+        ch.statusLabel = new VelixText(QString("Checking for %1 updates\u2026").arg(label), ch.upToDatePanel);
+        ch.statusLabel->setPointSize(10);
+        ch.statusLabel->setTextColor(QColor(160, 160, 160));
+        l->addWidget(ch.statusLabel);
+    }
+    pageLayout->addWidget(ch.upToDatePanel);
+
+    // ── Update-available panel ────────────────────────────────────────────
+    ch.updatePanel = new QWidget(page);
+    ch.updatePanel->setAutoFillBackground(true);
+    QPalette p2 = ch.updatePanel->palette();
+    p2.setColor(QPalette::Window, QColor(26, 26, 26, 235));
+    ch.updatePanel->setPalette(p2);
+    ch.updatePanel->hide();
+    {
+        auto* panelLayout = new QVBoxLayout(ch.updatePanel);
         panelLayout->setContentsMargins(14, 14, 14, 14);
         panelLayout->setSpacing(10);
 
         // Version row
-        auto* versionRow = new QHBoxLayout();
-        m_currentVersionLabel = new VelixText(
-            QString("Current:  %1").arg(QString::fromUtf8(kInstallerVersion)), m_updatePanel);
-        m_currentVersionLabel->setPointSize(10);
-        m_currentVersionLabel->setTextColor(QColor(200, 200, 200));
+        auto* vRow = new QHBoxLayout();
+        auto* curLbl = new VelixText(
+            QString("Current:  %1").arg(QString::fromUtf8(kInstallerVersion)), ch.updatePanel);
+        curLbl->setPointSize(10);
+        curLbl->setTextColor(QColor(200, 200, 200));
 
-        m_latestVersionLabel = new VelixText("Latest:  —", m_updatePanel);
-        m_latestVersionLabel->setPointSize(10);
-        m_latestVersionLabel->setTextColor(QColor(255, 140, 30));
+        ch.latestLabel = new VelixText("Latest:  \u2014", ch.updatePanel);
+        ch.latestLabel->setPointSize(10);
+        ch.latestLabel->setTextColor(QColor(255, 140, 30));
 
-        versionRow->addWidget(m_currentVersionLabel);
-        versionRow->addStretch(1);
-        versionRow->addWidget(m_latestVersionLabel);
-        panelLayout->addLayout(versionRow);
+        vRow->addWidget(curLbl);
+        vRow->addStretch(1);
+        vRow->addWidget(ch.latestLabel);
+        panelLayout->addLayout(vRow);
 
-        // Separator
-        auto* sep = new QWidget(m_updatePanel);
+        auto* sep = new QWidget(ch.updatePanel);
         sep->setFixedHeight(1);
         sep->setStyleSheet("background: #2e2e2e;");
         panelLayout->addWidget(sep);
 
-        // Changelog
-        m_changelogEdit = new QTextEdit(m_updatePanel);
-        m_changelogEdit->setReadOnly(true);
-        m_changelogEdit->setFixedHeight(180);
-        m_changelogEdit->setStyleSheet(
+        ch.changelogEdit = new QTextEdit(ch.updatePanel);
+        ch.changelogEdit->setReadOnly(true);
+        ch.changelogEdit->setFixedHeight(160);
+        ch.changelogEdit->setStyleSheet(
             "QTextEdit {"
             "  background: #1a1a1a; color: #d0d0d0; border: 1px solid #333;"
-            "  border-radius: 6px; font-family: monospace; font-size: 9pt;"
-            "  padding: 6px;"
-            "}"
-        );
-        panelLayout->addWidget(m_changelogEdit);
+            "  border-radius: 6px; font-family: monospace; font-size: 9pt; padding: 6px;"
+            "}");
+        panelLayout->addWidget(ch.changelogEdit);
 
-        // Buttons
         auto* btnRow = new QHBoxLayout();
         btnRow->setSpacing(10);
-        m_downloadButton = new FireButton("Download && Install", FireButton::Variant::Primary, m_updatePanel);
-        m_downloadButton->setFixedHeight(34);
-        m_skipButton = new FireButton("Skip this version", FireButton::Variant::Secondary, m_updatePanel);
-        m_skipButton->setFixedHeight(34);
-        btnRow->addWidget(m_downloadButton);
-        btnRow->addWidget(m_skipButton);
+        ch.downloadBtn = new FireButton("Download && Install", FireButton::Variant::Primary, ch.updatePanel);
+        ch.downloadBtn->setFixedHeight(34);
+        ch.skipBtn     = new FireButton("Skip this version", FireButton::Variant::Secondary, ch.updatePanel);
+        ch.skipBtn->setFixedHeight(34);
+        btnRow->addWidget(ch.downloadBtn);
+        btnRow->addWidget(ch.skipBtn);
         btnRow->addStretch(1);
         panelLayout->addLayout(btnRow);
 
-        // Progress
-        m_progressBar = new VelixProgressBar(m_updatePanel);
-        m_progressBar->setRange(0, 100);
-        m_progressBar->setValue(0);
-        m_progressBar->hide();
-        panelLayout->addWidget(m_progressBar);
+        ch.progressBar = new VelixProgressBar(ch.updatePanel);
+        ch.progressBar->setRange(0, 100);
+        ch.progressBar->setValue(0);
+        ch.progressBar->hide();
+        panelLayout->addWidget(ch.progressBar);
 
-        m_speedLabel = new VelixText(m_updatePanel);
-        m_speedLabel->setPointSize(9);
-        m_speedLabel->setTextColor(QColor(150, 150, 150));
-        m_speedLabel->hide();
-        panelLayout->addWidget(m_speedLabel);
+        ch.speedLabel = new VelixText(ch.updatePanel);
+        ch.speedLabel->setPointSize(9);
+        ch.speedLabel->setTextColor(QColor(150, 150, 150));
+        ch.speedLabel->hide();
+        panelLayout->addWidget(ch.speedLabel);
     }
-    mainLayout->addWidget(m_updatePanel);
-    mainLayout->addStretch(1);
+    pageLayout->addWidget(ch.updatePanel);
+    pageLayout->addStretch(1);
 
-    // Connections
-    connect(m_downloadButton, &QPushButton::clicked, this, &UpdateWidget::onDownloadAndInstall);
-    connect(m_skipButton,     &QPushButton::clicked, this, &UpdateWidget::onSkipVersion);
+    // Button connections (capture &ch by reference — both live as long as UpdateWidget)
+    connect(ch.downloadBtn, &QPushButton::clicked, this, [this, &ch]{ startDownload(ch); });
+    connect(ch.skipBtn,     &QPushButton::clicked, this, [this, &ch]{ skipVersion(ch); });
 
-    connect(m_checker, &AppUpdateChecker::downloadProgressChanged, this, &UpdateWidget::onDownloadProgress);
-    connect(m_checker, &AppUpdateChecker::downloadDataReady,        this, &UpdateWidget::onDownloadDataReady);
-    connect(m_checker, &AppUpdateChecker::downloadFinished,         this, &UpdateWidget::onDownloadFinished);
-    connect(m_checker, &AppUpdateChecker::downloadError,            this, &UpdateWidget::onDownloadError);
+    return page;
 }
 
-void UpdateWidget::onUpdateAvailable(const QString& version, const QString& downloadUrl, const QString& changelog)
+// ── Slots ─────────────────────────────────────────────────────────────────────
+void UpdateWidget::onStableUpdateAvailable(const QString& version, const QString& url, const QString& changelog)
 {
-    m_latestVersion = version;
-    m_downloadUrl   = downloadUrl;
-
-    m_latestVersionLabel->setText(QString("Latest:  %1").arg(version));
-    m_changelogEdit->setPlainText(changelog.isEmpty() ? "(No changelog provided)" : changelog);
-
-    m_upToDatePanel->hide();
-    m_updatePanel->show();
+    m_stable.version     = version;
+    m_stable.downloadUrl = url;
+    m_stable.latestLabel->setText(QString("Latest:  %1").arg(version));
+    m_stable.changelogEdit->setPlainText(changelog.isEmpty() ? "(No changelog provided)" : changelog);
+    m_stable.upToDatePanel->hide();
+    m_stable.updatePanel->show();
 }
 
-void UpdateWidget::onNoUpdate()
+void UpdateWidget::onUnstableUpdateAvailable(const QString& version, const QString& url, const QString& changelog)
 {
-    m_statusLabel->setText(QString("You\u2019re up to date  (%1)").arg(QString::fromUtf8(kInstallerVersion)));
-    m_upToDatePanel->show();
-    m_updatePanel->hide();
+    m_unstable.version     = version;
+    m_unstable.downloadUrl = url;
+    m_unstable.latestLabel->setText(QString("Latest:  %1").arg(version));
+    m_unstable.changelogEdit->setPlainText(changelog.isEmpty() ? "(No changelog provided)" : changelog);
+    m_unstable.upToDatePanel->hide();
+    m_unstable.updatePanel->show();
+
+    // Switch to Unstable tab to draw attention
+    m_tabWidget->setCurrentIndex(1);
+}
+
+void UpdateWidget::onNoStableUpdate()
+{
+    m_stable.statusLabel->setText(
+        QString("You\u2019re up to date  (%1)").arg(QString::fromUtf8(kInstallerVersion)));
+    m_stable.upToDatePanel->show();
+    m_stable.updatePanel->hide();
+}
+
+void UpdateWidget::onNoUnstableUpdate()
+{
+    m_unstable.statusLabel->setText("No pre-releases available.");
+    m_unstable.upToDatePanel->show();
+    m_unstable.updatePanel->hide();
 }
 
 void UpdateWidget::onCheckFailed()
 {
-    m_statusLabel->setText(QString("Could not check for updates  (%1)").arg(QString::fromUtf8(kInstallerVersion)));
-    m_upToDatePanel->show();
-    m_updatePanel->hide();
+    const QString msg = QString("Could not check for updates  (%1)").arg(QString::fromUtf8(kInstallerVersion));
+    m_stable.statusLabel->setText(msg);
+    m_unstable.statusLabel->setText(msg);
 }
 
-void UpdateWidget::onDownloadAndInstall()
+// ── Download ──────────────────────────────────────────────────────────────────
+void UpdateWidget::startDownload(Channel& ch)
 {
-    if (m_downloadUrl.isEmpty())
+    if (ch.downloadUrl.isEmpty() || m_activeChannel)
         return;
 
-    m_downloadButton->setEnabled(false);
-    m_skipButton->setEnabled(false);
-    m_progressBar->show();
-    m_speedLabel->show();
-    m_progressBar->setValue(0);
-    m_speedLabel->setText("Starting download\u2026");
+    m_activeChannel = &ch;
+
+    ch.downloadBtn->setEnabled(false);
+    ch.skipBtn->setEnabled(false);
+    ch.progressBar->setValue(0);
+    ch.progressBar->show();
+    ch.speedLabel->setText("Starting download\u2026");
+    ch.speedLabel->show();
 
     const QString tempZip = QDir::tempPath() + "/VelixInstaller_update.zip";
-    m_downloadFile = new QFile(tempZip, this);
-    if (!m_downloadFile->open(QIODevice::WriteOnly | QIODevice::Truncate))
+    ch.downloadFile = new QFile(tempZip, this);
+    if (!ch.downloadFile->open(QIODevice::WriteOnly | QIODevice::Truncate))
     {
-        ToastNotification::show("Failed to open temp file for download.", ToastType::Error, this);
-        m_downloadButton->setEnabled(true);
-        m_skipButton->setEnabled(true);
+        ToastNotification::show("Failed to open temp file.", ToastType::Error, this);
+        ch.downloadBtn->setEnabled(true);
+        ch.skipBtn->setEnabled(true);
+        ch.progressBar->hide();
+        ch.speedLabel->hide();
+        m_activeChannel = nullptr;
+        delete ch.downloadFile;
+        ch.downloadFile = nullptr;
         return;
     }
 
-    connect(m_checker, &AppUpdateChecker::downloadSpeedChanged, this, [this](double kbps)
-    {
-        m_speedLabel->setText(QString("%1 KB/s").arg(kbps, 0, 'f', 1));
-    });
-
-    m_checker->download(QUrl(m_downloadUrl));
+    m_checker->download(QUrl(ch.downloadUrl));
 }
 
-void UpdateWidget::onSkipVersion()
+// ── Skip ──────────────────────────────────────────────────────────────────────
+void UpdateWidget::skipVersion(Channel& ch)
 {
-    if (m_latestVersion.isEmpty())
+    if (ch.version.isEmpty())
         return;
 
     Config cfg;
     cfg.load();
-    cfg.mutableConfig()["skipped_version"] = m_latestVersion.toStdString();
+    cfg.mutableConfig()[ch.skipConfigKey.toStdString()] = ch.version.toStdString();
     cfg.save();
 
-    m_updatePanel->hide();
-    m_statusLabel->setText(QString("Skipped version %1").arg(m_latestVersion));
-    m_upToDatePanel->show();
+    ch.updatePanel->hide();
+    ch.statusLabel->setText(QString("Skipped version %1").arg(ch.version));
+    ch.upToDatePanel->show();
 
-    ToastNotification::show(QString("Update %1 skipped.").arg(m_latestVersion), ToastType::Info, this);
+    ToastNotification::show(QString("Update %1 skipped.").arg(ch.version), ToastType::Info, this);
 }
 
-void UpdateWidget::onDownloadProgress(qint64 received, qint64 total)
-{
-    if (total > 0)
-        m_progressBar->setValue(static_cast<int>(received * 100 / total));
-}
-
-void UpdateWidget::onDownloadDataReady(const QByteArray& chunk)
-{
-    if (m_downloadFile && m_downloadFile->isOpen())
-        m_downloadFile->write(chunk);
-}
-
-void UpdateWidget::onDownloadFinished()
-{
-    if (m_downloadFile)
-    {
-        m_downloadFile->close();
-        m_downloadFile->deleteLater();
-        m_downloadFile = nullptr;
-    }
-
-    m_speedLabel->setText("Download complete. Preparing update\u2026");
-    applyUpdate();
-}
-
-void UpdateWidget::onDownloadError(const QString& error)
-{
-    if (m_downloadFile)
-    {
-        m_downloadFile->close();
-        m_downloadFile->deleteLater();
-        m_downloadFile = nullptr;
-    }
-
-    m_progressBar->hide();
-    m_speedLabel->hide();
-    m_downloadButton->setEnabled(true);
-    m_skipButton->setEnabled(true);
-
-    ToastNotification::show("Download failed: " + error, ToastType::Error, this);
-}
-
+// ── Apply update ──────────────────────────────────────────────────────────────
 void UpdateWidget::applyUpdate()
 {
     const QString zipPath    = QDir::tempPath() + "/VelixInstaller_update.zip";
@@ -349,46 +400,50 @@ void UpdateWidget::applyUpdate()
     if (stagedPath.isEmpty())
     {
         ToastNotification::show("Failed to extract update archive.", ToastType::Error, this);
-        m_downloadButton->setEnabled(true);
-        m_skipButton->setEnabled(true);
-        m_progressBar->hide();
-        m_speedLabel->hide();
+        if (m_activeChannel)
+        {
+            m_activeChannel->downloadBtn->setEnabled(true);
+            m_activeChannel->skipBtn->setEnabled(true);
+            m_activeChannel->progressBar->hide();
+            m_activeChannel->speedLabel->hide();
+        }
+        m_activeChannel = nullptr;
         return;
     }
 
+    if (m_activeChannel)
+        m_activeChannel->speedLabel->setText("Restarting\u2026");
+
     const QString currentBin = QCoreApplication::applicationFilePath();
-    m_speedLabel->setText("Restarting\u2026");
 
 #ifdef _WIN32
-    // Write a .bat that waits, replaces, then launches.
     const QString batPath = QDir::tempPath() + "/velix_update.bat";
     {
         QFile bat(batPath);
         if (bat.open(QIODevice::WriteOnly | QIODevice::Text))
         {
             QTextStream ts(&bat);
-            ts << "@echo off\r\n";
-            ts << "timeout /t 2 /nobreak > nul\r\n";
-            ts << "copy /y \"" << stagedPath << "\" \"" << currentBin << "\"\r\n";
-            ts << "del \"" << stagedPath << "\"\r\n";
-            ts << "start \"\" \"" << currentBin << "\"\r\n";
+            ts << "@echo off\r\n"
+               << "timeout /t 2 /nobreak > nul\r\n"
+               << "copy /y \"" << stagedPath << "\" \"" << currentBin << "\"\r\n"
+               << "del \"" << stagedPath << "\"\r\n"
+               << "start \"\" \"" << currentBin << "\"\r\n";
         }
     }
     QProcess::startDetached("cmd.exe", {"/c", batPath});
 #else
-    // Write a shell script that sleeps, replaces, then execs.
     const QString shPath = QDir::tempPath() + "/velix_update.sh";
     {
         QFile sh(shPath);
         if (sh.open(QIODevice::WriteOnly | QIODevice::Text))
         {
             QTextStream ts(&sh);
-            ts << "#!/bin/sh\n";
-            ts << "sleep 1\n";
-            ts << "cp \"" << stagedPath << "\" \"" << currentBin << "\"\n";
-            ts << "chmod +x \"" << currentBin << "\"\n";
-            ts << "rm -f \"" << stagedPath << "\"\n";
-            ts << "exec \"" << currentBin << "\"\n";
+            ts << "#!/bin/sh\n"
+               << "sleep 1\n"
+               << "cp \"" << stagedPath << "\" \"" << currentBin << "\"\n"
+               << "chmod +x \"" << currentBin << "\"\n"
+               << "rm -f \"" << stagedPath << "\"\n"
+               << "exec \"" << currentBin << "\"\n";
         }
         sh.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner);
     }
@@ -398,10 +453,10 @@ void UpdateWidget::applyUpdate()
     QCoreApplication::quit();
 }
 
+// ── Paint ─────────────────────────────────────────────────────────────────────
 void UpdateWidget::paintEvent(QPaintEvent* event)
 {
     Q_UNUSED(event);
-
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing);
 

@@ -16,8 +16,10 @@ public:
     void download(const QUrl& url);
 
 signals:
-    void updateAvailable(const QString& version, const QString& downloadUrl, const QString& changelog);
-    void noUpdateAvailable();
+    void stableUpdateAvailable(const QString& version, const QString& downloadUrl, const QString& changelog);
+    void unstableUpdateAvailable(const QString& version, const QString& downloadUrl, const QString& changelog);
+    void noStableUpdate();
+    void noUnstableUpdate();
     void checkFailed();
 
     void downloadProgressChanged(qint64 bytesReceived, qint64 bytesTotal);

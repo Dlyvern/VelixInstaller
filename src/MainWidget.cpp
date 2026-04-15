@@ -43,13 +43,19 @@ MainWidget::MainWidget(QWidget* widget) : QWidget(widget)
 
     connect(m_installWidget, &InstallWidget::installedVersionsChanged, m_settingsWidget, &SettingsWidget::reloadInstalledVersions);
 
-    connect(m_updateChecker, &AppUpdateChecker::updateAvailable,
-            m_updateWidget,  &UpdateWidget::onUpdateAvailable);
-    connect(m_updateChecker, &AppUpdateChecker::noUpdateAvailable,
-            m_updateWidget,  &UpdateWidget::onNoUpdate);
+    connect(m_updateChecker, &AppUpdateChecker::stableUpdateAvailable,
+            m_updateWidget,  &UpdateWidget::onStableUpdateAvailable);
+    connect(m_updateChecker, &AppUpdateChecker::unstableUpdateAvailable,
+            m_updateWidget,  &UpdateWidget::onUnstableUpdateAvailable);
+    connect(m_updateChecker, &AppUpdateChecker::noStableUpdate,
+            m_updateWidget,  &UpdateWidget::onNoStableUpdate);
+    connect(m_updateChecker, &AppUpdateChecker::noUnstableUpdate,
+            m_updateWidget,  &UpdateWidget::onNoUnstableUpdate);
     connect(m_updateChecker, &AppUpdateChecker::checkFailed,
             m_updateWidget,  &UpdateWidget::onCheckFailed);
-    connect(m_updateChecker, &AppUpdateChecker::updateAvailable,
+    connect(m_updateChecker, &AppUpdateChecker::stableUpdateAvailable,
+            this, [this](const QString&, const QString&, const QString&){ emit updateAvailable(); });
+    connect(m_updateChecker, &AppUpdateChecker::unstableUpdateAvailable,
             this, [this](const QString&, const QString&, const QString&){ emit updateAvailable(); });
 
     m_stackedWidget->addWidget(m_installWidget);

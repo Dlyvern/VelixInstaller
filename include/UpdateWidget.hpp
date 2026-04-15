@@ -3,6 +3,7 @@
 
 #include <QWidget>
 #include <QVBoxLayout>
+#include <QTabWidget>
 #include <QTextEdit>
 #include <QFile>
 #include <QPainter>
@@ -22,41 +23,46 @@ public:
     ~UpdateWidget() override = default;
 
 public slots:
-    void onUpdateAvailable(const QString& version, const QString& downloadUrl, const QString& changelog);
-    void onNoUpdate();
+    void onStableUpdateAvailable(const QString& version, const QString& downloadUrl, const QString& changelog);
+    void onUnstableUpdateAvailable(const QString& version, const QString& downloadUrl, const QString& changelog);
+    void onNoStableUpdate();
+    void onNoUnstableUpdate();
     void onCheckFailed();
 
 protected:
     void paintEvent(QPaintEvent* event) override;
 
-private slots:
-    void onDownloadAndInstall();
-    void onSkipVersion();
-    void onDownloadProgress(qint64 received, qint64 total);
-    void onDownloadDataReady(const QByteArray& chunk);
-    void onDownloadFinished();
-    void onDownloadError(const QString& error);
-
 private:
-    void applyUpdate();
+    // Per-channel state
+    struct Channel
+    {
+        QString           skipConfigKey;
+        QString           version;
+        QString           downloadUrl;
+
+        VelixText*        latestLabel{nullptr};
+        QTextEdit*        changelogEdit{nullptr};
+        FireButton*       downloadBtn{nullptr};
+        FireButton*       skipBtn{nullptr};
+        VelixProgressBar* progressBar{nullptr};
+        VelixText*        speedLabel{nullptr};
+        VelixText*        statusLabel{nullptr};
+        QWidget*          updatePanel{nullptr};
+        QWidget*          upToDatePanel{nullptr};
+        QFile*            downloadFile{nullptr};
+    };
+
+    QWidget* buildChannelPage(Channel& ch, const QString& label);
+    void     startDownload(Channel& ch);
+    void     skipVersion(Channel& ch);
+    void     applyUpdate();
 
     AppUpdateChecker* m_checker{nullptr};
+    QTabWidget*       m_tabWidget{nullptr};
+    Channel*          m_activeChannel{nullptr};
 
-    VelixText*        m_currentVersionLabel{nullptr};
-    VelixText*        m_latestVersionLabel{nullptr};
-    QTextEdit*        m_changelogEdit{nullptr};
-    FireButton*       m_downloadButton{nullptr};
-    FireButton*       m_skipButton{nullptr};
-    VelixProgressBar* m_progressBar{nullptr};
-    VelixText*        m_speedLabel{nullptr};
-    VelixText*        m_statusLabel{nullptr};
-
-    QWidget*          m_updatePanel{nullptr};  // shown when update is available
-    QWidget*          m_upToDatePanel{nullptr}; // shown when no update
-
-    QString           m_latestVersion;
-    QString           m_downloadUrl;
-    QFile*            m_downloadFile{nullptr};
+    Channel m_stable;
+    Channel m_unstable;
 };
 
 #endif // UPDATE_WIDGET_HPP

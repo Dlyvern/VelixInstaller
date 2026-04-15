@@ -20,12 +20,14 @@ QString currentPlatformToken()
 #endif
 }
 
-// Parse "v1.2.3" or "1.2.3" → {major, minor, patch}. Returns {-1,-1,-1} on failure.
 std::tuple<int,int,int> parseSemVer(const QString& tag)
 {
     QString s = tag;
     if (s.startsWith('v') || s.startsWith('V'))
         s = s.mid(1);
+
+    // Strip any pre-release suffix (e.g. "1.0.0-beta" → "1.0.0")
+    s = s.section('-', 0, 0);
 
     const QStringList parts = s.split('.');
     if (parts.size() < 3)
@@ -54,6 +56,36 @@ bool isNewer(const QString& latest, const QString& current)
     if (lMin != cMin) return lMin > cMin;
     return lPat > cPat;
 }
+
+// Pick the platform-matched download URL from a release's assets array.
+// Returns empty string if no .zip asset is found.
+QString pickDownloadUrl(const QJsonObject& release)
+{
+    const QString preferred = currentPlatformToken();
+    QString matchedUrl;
+    QString fallbackUrl;
+
+    for (const QJsonValue& assetVal : release["assets"].toArray())
+    {
+        const QJsonObject asset = assetVal.toObject();
+        const QString name = asset["name"].toString().toLower();
+        const QString url  = asset["browser_download_url"].toString();
+
+        if (!name.endsWith(".zip"))
+            continue;
+
+        if (fallbackUrl.isEmpty())
+            fallbackUrl = url;
+
+        if (name.contains(preferred))
+        {
+            matchedUrl = url;
+            break;
+        }
+    }
+
+    return !matchedUrl.isEmpty() ? matchedUrl : fallbackUrl;
+}
 } // namespace
 
 AppUpdateChecker::AppUpdateChecker(QObject* parent) : QObject(parent)
@@ -61,7 +93,7 @@ AppUpdateChecker::AppUpdateChecker(QObject* parent) : QObject(parent)
     m_manager = new QNetworkAccessManager(this);
     connect(m_manager, &QNetworkAccessManager::finished, this, &AppUpdateChecker::onFinished);
 
-    QUrl url("https://api.github.com/repos/Dlyvern/VelixInstaller/releases/latest");
+    QUrl url("https://api.github.com/repos/Dlyvern/VelixInstaller/releases");
     QNetworkRequest request(url);
     request.setRawHeader("Accept", "application/vnd.github+json");
     request.setRawHeader("User-Agent", "VelixInstaller");
@@ -107,7 +139,7 @@ void AppUpdateChecker::download(const QUrl& url)
 void AppUpdateChecker::onFinished(QNetworkReply* reply)
 {
     const QString urlStr = reply->request().url().toString();
-    if (!urlStr.contains("/repos/Dlyvern/VelixInstaller/releases/latest"))
+    if (!urlStr.contains("/repos/Dlyvern/VelixInstaller/releases"))
         return;
 
     reply->deleteLater();
@@ -121,66 +153,86 @@ void AppUpdateChecker::onFinished(QNetworkReply* reply)
     const QByteArray data = reply->readAll();
     const QJsonDocument doc = QJsonDocument::fromJson(data);
 
-    if (!doc.isObject())
+    if (!doc.isArray())
     {
         emit checkFailed();
         return;
     }
 
-    const QJsonObject obj = doc.object();
-    const QString latestTag = obj["tag_name"].toString();
-    const QString changelog  = obj["body"].toString();
-
-    // Check skipped version in config
+    // Load skipped versions from config
     Config cfg;
     cfg.load();
-    const auto& json = cfg.getConfig();
-    if (json.contains("skipped_version") && json["skipped_version"].is_string())
+    const auto& cfgJson = cfg.getConfig();
+    const QString skippedStable   = cfgJson.contains("skipped_stable_version")   && cfgJson["skipped_stable_version"].is_string()
+        ? QString::fromStdString(cfgJson["skipped_stable_version"].get<std::string>())   : QString{};
+    const QString skippedUnstable = cfgJson.contains("skipped_unstable_version") && cfgJson["skipped_unstable_version"].is_string()
+        ? QString::fromStdString(cfgJson["skipped_unstable_version"].get<std::string>()) : QString{};
+
+    const QString current = QString::fromUtf8(kInstallerVersion);
+
+    QJsonObject latestStable;
+    QJsonObject latestUnstable;
+
+    // Array is newest-first; find the first non-draft stable and first non-draft prerelease.
+    for (const QJsonValue& val : doc.array())
     {
-        const QString skipped = QString::fromStdString(json["skipped_version"].get<std::string>());
-        if (skipped == latestTag)
-        {
-            emit noUpdateAvailable();
-            return;
-        }
-    }
+        const QJsonObject candidate = val.toObject();
 
-    if (!isNewer(latestTag, QString::fromUtf8(kInstallerVersion)))
-    {
-        emit noUpdateAvailable();
-        return;
-    }
-
-    // Find download URL for this platform
-    const QString preferred = currentPlatformToken();
-    QString matchedUrl;
-    QString fallbackUrl;
-
-    for (const QJsonValue& assetVal : obj["assets"].toArray())
-    {
-        const QJsonObject asset = assetVal.toObject();
-        const QString name = asset["name"].toString().toLower();
-        const QString url  = asset["browser_download_url"].toString();
-
-        if (!name.endsWith(".zip"))
+        if (candidate["draft"].toBool())
             continue;
 
-        if (fallbackUrl.isEmpty())
-            fallbackUrl = url;
-
-        if (name.contains(preferred))
+        if (candidate["prerelease"].toBool())
         {
-            matchedUrl = url;
-            break;
+            if (latestUnstable.isEmpty())
+                latestUnstable = candidate;
         }
+        else
+        {
+            if (latestStable.isEmpty())
+                latestStable = candidate;
+        }
+
+        if (!latestStable.isEmpty() && !latestUnstable.isEmpty())
+            break;
     }
 
-    const QString selectedUrl = !matchedUrl.isEmpty() ? matchedUrl : fallbackUrl;
-    if (selectedUrl.isEmpty())
+    // ── Stable channel ────────────────────────────────────────────────────
+    if (!latestStable.isEmpty())
     {
-        emit checkFailed();
-        return;
+        const QString tag = latestStable["tag_name"].toString();
+        if (tag != skippedStable && isNewer(tag, current))
+        {
+            const QString url = pickDownloadUrl(latestStable);
+            if (!url.isEmpty())
+            {
+                emit stableUpdateAvailable(tag, url, latestStable["body"].toString());
+            }
+            else
+                emit noStableUpdate();
+        }
+        else
+            emit noStableUpdate();
     }
+    else
+        emit noStableUpdate();
 
-    emit updateAvailable(latestTag, selectedUrl, changelog);
+    // ── Unstable channel ──────────────────────────────────────────────────
+    if (!latestUnstable.isEmpty())
+    {
+        const QString tag = latestUnstable["tag_name"].toString();
+        if (tag != skippedUnstable && isNewer(tag, current))
+        {
+            const QString url = pickDownloadUrl(latestUnstable);
+            if (!url.isEmpty())
+            {
+                emit unstableUpdateAvailable(tag, url, latestUnstable["body"].toString());
+            }
+            else
+                emit noUnstableUpdate();
+        }
+        else
+            emit noUnstableUpdate();
+    }
+    else
+        emit noUnstableUpdate();
 }
