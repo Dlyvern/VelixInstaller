@@ -5,10 +5,42 @@
 #include <QTimer>
 #include <QPoint>
 #include <QMouseEvent>
+#include <QPixmap>
+#include <QVector>
+#include <QPropertyAnimation>
 
 #include "widgets/VelixText.hpp"
 #include "widgets/VelixProgressBar.hpp"
 #include "FireButton.hpp"
+
+// ── Slideshow ─────────────────────────────────────────────────────────────────
+class SlideshowWidget : public QWidget
+{
+    Q_OBJECT
+    Q_PROPERTY(qreal blendAlpha READ blendAlpha WRITE setBlendAlpha)
+public:
+    explicit SlideshowWidget(QWidget* parent = nullptr);
+
+    void loadFromDir(const QString& dir);
+    bool hasImages() const { return !m_images.isEmpty(); }
+
+    qreal blendAlpha() const        { return m_blendAlpha; }
+    void  setBlendAlpha(qreal v)    { m_blendAlpha = v; update(); }
+
+protected:
+    void paintEvent(QPaintEvent*) override;
+
+private:
+    void advance();
+
+    QVector<QPixmap>    m_images;
+    int                 m_current{0};
+    int                 m_next{0};
+    qreal               m_blendAlpha{1.0};
+
+    QTimer*             m_slideTimer{nullptr};
+    QPropertyAnimation* m_fadeAnim{nullptr};
+};
 
 // ── Spinning arc loader ───────────────────────────────────────────────────────
 class SpinnerWidget : public QWidget
@@ -54,9 +86,8 @@ protected:
 private:
     void nextHint();
 
-    SpinnerWidget*    m_spinner{nullptr};
+    SlideshowWidget*  m_slideshow{nullptr};
     VelixProgressBar* m_progressBar{nullptr};
-    VelixText*        m_speedLabel{nullptr};
     VelixText*        m_statusLabel{nullptr};
     VelixText*        m_hintLabel{nullptr};
     FireButton*       m_minimizeBtn{nullptr};

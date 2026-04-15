@@ -3,8 +3,10 @@
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QMap>
+#include <QPushButton>
 
 #include "widgets/VelixText.hpp"
+#include "widgets/VelixProgressBar.hpp"
 
 MainWidget::MainWidget(QWidget* widget) : QWidget(widget)
 {
@@ -38,6 +40,8 @@ MainWidget::MainWidget(QWidget* widget) : QWidget(widget)
     m_settingsWidget = new SettingsWidget(m_stackedWidget);
     m_documentationWidget = new DocumentationWidget(m_stackedWidget);
 
+    m_samplesWidget = new SamplesWidget(m_stackedWidget);
+
     m_updateChecker = new AppUpdateChecker(this);
     m_updateWidget  = new UpdateWidget(m_updateChecker, m_stackedWidget);
 
@@ -60,6 +64,7 @@ MainWidget::MainWidget(QWidget* widget) : QWidget(widget)
 
     m_stackedWidget->addWidget(m_installWidget);
     m_stackedWidget->addWidget(m_projectWidget);
+    m_stackedWidget->addWidget(m_samplesWidget);
     m_stackedWidget->addWidget(m_settingsWidget);
     m_stackedWidget->addWidget(m_documentationWidget);
     m_stackedWidget->addWidget(m_updateWidget);
@@ -67,6 +72,70 @@ MainWidget::MainWidget(QWidget* widget) : QWidget(widget)
     m_stackedWidget->setCurrentWidget(m_projectWidget);
 
     mainLayout->addWidget(m_stackedWidget);
+
+    // ── Download status bar (hidden until download starts) ────────────────
+    m_downloadBar = new QWidget(this);
+    m_downloadBar->setFixedHeight(36);
+    m_downloadBar->setStyleSheet(
+        "background: #1a1a1a;"
+        "border-top: 1px solid #333;"
+        "border-radius: 8px;");
+    m_downloadBar->hide();
+
+    auto* barLayout = new QHBoxLayout(m_downloadBar);
+    barLayout->setContentsMargins(12, 0, 8, 0);
+    barLayout->setSpacing(10);
+
+    m_downloadBarLabel = new QLabel("Downloading update…  0%", m_downloadBar);
+    m_downloadBarLabel->setStyleSheet("color: #ccc; font-size: 9pt;");
+
+    auto* barProgress = new VelixProgressBar(m_downloadBar);
+    barProgress->setObjectName("barProgress");
+    barProgress->setRange(0, 100);
+    barProgress->setValue(0);
+    barProgress->setFixedHeight(6);
+
+    auto* showBtn = new QPushButton("Show progress", m_downloadBar);
+    showBtn->setFixedHeight(24);
+    showBtn->setStyleSheet(
+        "QPushButton {"
+        "  background: #2a2a2a; color: #ff6a00; border: 1px solid #444;"
+        "  border-radius: 6px; padding: 0 10px; font-size: 9pt;"
+        "}"
+        "QPushButton:hover { background: #333; }");
+    connect(showBtn, &QPushButton::clicked, m_updateWidget, &UpdateWidget::showDownloadDialog);
+
+    barLayout->addWidget(m_downloadBarLabel, 0);
+    barLayout->addWidget(barProgress, 1);
+    barLayout->addWidget(showBtn, 0);
+
+    mainLayout->addWidget(m_downloadBar);
+
+    // Wire download signals from UpdateWidget
+    connect(m_updateWidget, &UpdateWidget::downloadStarted, this, &MainWidget::onDownloadStarted);
+    connect(m_updateWidget, &UpdateWidget::downloadProgressChanged, this, &MainWidget::onDownloadProgress);
+    connect(m_updateWidget, &UpdateWidget::downloadEnded, this, &MainWidget::onDownloadEnded);
+}
+
+void MainWidget::onDownloadStarted(const QString& version)
+{
+    m_downloadBarLabel->setText(QString("Downloading update %1  \u2014  0%").arg(version));
+    if (auto* bar = m_downloadBar->findChild<VelixProgressBar*>("barProgress"))
+        bar->setValue(0);
+    m_downloadBar->show();
+}
+
+void MainWidget::onDownloadProgress(int percent)
+{
+    const QString base = m_downloadBarLabel->text().section(QChar(0x2014), 0, 0).trimmed();
+    m_downloadBarLabel->setText(QString("%1  \u2014  %2%").arg(base).arg(percent));
+    if (auto* bar = m_downloadBar->findChild<VelixProgressBar*>("barProgress"))
+        bar->setValue(percent);
+}
+
+void MainWidget::onDownloadEnded()
+{
+    m_downloadBar->hide();
 }
 
 void MainWidget::changeWidget(const QString& widgetName)
@@ -75,6 +144,7 @@ void MainWidget::changeWidget(const QString& widgetName)
     const static QMap<QString, QWidget*> widgets
     {
         {"Projects",      m_projectWidget},
+        {"Samples",       m_samplesWidget},
         {"Installs",      m_installWidget},
         {"Settings",      m_settingsWidget},
         {"Documentation", m_documentationWidget},

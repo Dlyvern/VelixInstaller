@@ -26,6 +26,7 @@ private slots:
     void onCreateProjectRequested();
     void onOpenProjectRequested();
     void onOpenProjectPath(const QString& projectPath);
+    void onEditProjectRequested(const QString& projectPath, const QString& projectName);
     void onRemoveProjectRequested(const QString& projectFilePath);
     void onSearchTextChanged(const QString& text);
 
@@ -38,6 +39,8 @@ private:
     bool upsertProjectInConfig(const project::ProjectData& projectData);
     void addProjectCard(const project::ProjectData& projectData);
     void loadProjectsFromConfig();
+    void captureProjectThumbnail(const QString& projectPath, qint64 pid);
+    ProjectWidget* findCardByPath(const QString& projectPath) const;
 
     Config       m_config;
     QWidget*     m_projectsContentWidget{nullptr};

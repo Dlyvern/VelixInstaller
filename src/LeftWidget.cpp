@@ -15,6 +15,7 @@ LeftWidget::LeftWidget(QWidget* parent) : QWidget(parent)
     m_mainLayout->addWidget(logoWidget, 0, Qt::AlignCenter);
 
     addTab("Projects",      "./resources/folder.png",    this);
+    addTab("Samples",       "./resources/cloud.png",     this);
     addTab("Documentation", "./resources/document.png",  this);
     addTab("Settings",      "./resources/setting.png",   this);
     addTab("Installs",      "./resources/installs.png",  this);

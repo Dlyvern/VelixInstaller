@@ -231,6 +231,7 @@ UpdateWidget::UpdateWidget(AppUpdateChecker* checker, QWidget* parent)
         m_activeChannel->speedLabel->setText("Installing update\u2026");
         if (m_downloadDialog)
             m_downloadDialog->onFinished();
+        emit downloadEnded();
         applyUpdate();
     });
 
@@ -254,6 +255,7 @@ UpdateWidget::UpdateWidget(AppUpdateChecker* checker, QWidget* parent)
             m_downloadDialog->onError(error);
             m_downloadDialog = nullptr;
         }
+        emit downloadEnded();
         ToastNotification::show("Download failed: " + error, ToastType::Error, this);
     });
 }
@@ -439,28 +441,29 @@ void UpdateWidget::startDownload(Channel& ch)
         return;
     }
 
-    // ── Create download dialog ────────────────────────────────────────────
-    m_downloadDialog = new UpdateDownloadDialog(ch.version, ch.changelogEdit->toPlainText(),
-                                                window());
+    // ── Create download dialog (no parent so it's never behind main window) ─
+    m_downloadDialog = new UpdateDownloadDialog(ch.version, ch.changelogEdit->toPlainText(), nullptr);
     m_downloadDialog->show();
+    m_downloadDialog->raise();
+    m_downloadDialog->activateWindow();
 
-    // Mirror progress into both the dialog and the in-tab bar
+    // Forward progress to dialog
     connect(m_checker, &AppUpdateChecker::downloadProgressChanged,
             m_downloadDialog, &UpdateDownloadDialog::onProgress);
     connect(m_checker, &AppUpdateChecker::downloadSpeedChanged,
             m_downloadDialog, &UpdateDownloadDialog::onSpeed);
 
+    // Emit signals for MainWidget status bar
+    emit downloadStarted(ch.version);
+    connect(m_checker, &AppUpdateChecker::downloadProgressChanged, this, [this](qint64 recv, qint64 total)
+    {
+        if (total > 0)
+            emit downloadProgressChanged(static_cast<int>(recv * 100 / total));
+    });
+
     // "Show progress" button reopens the dialog if minimized
     ch.showProgressBtn->show();
-    connect(ch.showProgressBtn, &QPushButton::clicked, this, [this]
-    {
-        if (m_downloadDialog)
-        {
-            m_downloadDialog->show();
-            m_downloadDialog->raise();
-            m_downloadDialog->activateWindow();
-        }
-    });
+    connect(ch.showProgressBtn, &QPushButton::clicked, this, [this]{ showDownloadDialog(); });
 
     m_checker->download(QUrl(ch.downloadUrl));
 }
@@ -547,6 +550,15 @@ void UpdateWidget::applyUpdate()
 #endif
 
     QCoreApplication::quit();
+}
+
+// ── showDownloadDialog ────────────────────────────────────────────────────────
+void UpdateWidget::showDownloadDialog()
+{
+    if (!m_downloadDialog) return;
+    m_downloadDialog->show();
+    m_downloadDialog->raise();
+    m_downloadDialog->activateWindow();
 }
 
 // ── Paint ─────────────────────────────────────────────────────────────────────

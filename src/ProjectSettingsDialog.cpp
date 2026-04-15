@@ -18,6 +18,11 @@
 
 #include "widgets/VelixText.hpp"
 #include "FireButton.hpp"
+#include "PluginManagerDialog.hpp"
+
+#include <QJsonDocument>
+#include <QJsonArray>
+#include <QJsonObject>
 
 namespace
 {
@@ -242,11 +247,52 @@ ProjectSettingsDialog::ProjectSettingsDialog(QWidget* parent)
     rootLayout->addWidget(titleBar);
     rootLayout->addWidget(makeSeparator(this));
 
+    // ── Template selector ───────────────────────────────────────────────────
+    auto* templateRow = new QHBoxLayout();
+    templateRow->setSpacing(10);
+
+    auto* templateLabel = new VelixText("Template:", this);
+    templateLabel->setPointSize(10);
+    templateLabel->setTextColor(QColor(180, 180, 180));
+    templateLabel->setBold(false);
+
+    m_templateCombo = new QComboBox(this);
+    m_templateCombo->setStyleSheet(kComboStyle);
+    m_templateCombo->addItem("Blank Project");
+    m_templateCombo->addItem("3D Game");
+    m_templateCombo->addItem("2D Game");
+    m_templateCombo->addItem("First Person");
+    m_templateCombo->setFixedHeight(28);
+    m_templateCombo->setMinimumWidth(180);
+
+    auto* templateDesc = new QLabel("Minimal project with empty scene and default settings.", this);
+    templateDesc->setStyleSheet("QLabel { color: #666666; font-size: 10px; }");
+
+    connect(m_templateCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
+        [this, templateDesc](int index)
+        {
+            applyTemplate(index);
+            static const char* descs[] = {
+                "Minimal project with empty scene and default settings.",
+                "3D scene with perspective camera, bloom, SSAO, and shadows.",
+                "Orthographic camera, FXAA, no SSAO. Ideal for sprite-based games.",
+                "Tuned for first-person: 90 FOV, high sensitivity, SSR enabled."
+            };
+            if (index >= 0 && index < 4)
+                templateDesc->setText(descs[index]);
+        });
+
+    templateRow->addWidget(templateLabel);
+    templateRow->addWidget(m_templateCombo);
+    templateRow->addWidget(templateDesc, 1);
+    rootLayout->addLayout(templateRow);
+
     // ── Tabs ─────────────────────────────────────────────────────────────────
     auto* tabs = new QTabWidget(this);
     tabs->addTab(buildCameraTab(),    "Camera");
     tabs->addTab(buildRenderingTab(), "Rendering");
     tabs->addTab(buildRtxTab(),       "RTX");
+    tabs->addTab(buildPluginsTab(),   "Plugins");
     rootLayout->addWidget(tabs, 1);
 
     // ── Buttons ───────────────────────────────────────────────────────────────
@@ -708,6 +754,79 @@ bool ProjectSettingsDialog::detectRtxCapability()
     return output.contains("rtx");
 }
 
+void ProjectSettingsDialog::applyTemplate(int index)
+{
+    // 0 = Blank, 1 = 3D Game, 2 = 2D Game, 3 = First Person
+    switch (index)
+    {
+    case 1: // 3D Game
+        m_fovSpin->setValue(60.0);
+        m_nearPlaneSpin->setValue(0.1);
+        m_farPlaneSpin->setValue(1000.0);
+        m_moveSpeedSpin->setValue(3.0);
+        m_mouseSensSpin->setValue(0.1);
+        m_ssaoCheck->setChecked(true);
+        m_bloomCheck->setChecked(true);
+        m_fxaaCheck->setChecked(true);
+        m_ssrCheck->setChecked(false);
+        m_shadowQualitySpin->setValue(4096);
+        m_shadowCascadesSpin->setValue(4);
+        m_postProcessingCheck->setChecked(true);
+        break;
+
+    case 2: // 2D Game
+        m_fovSpin->setValue(60.0);
+        m_nearPlaneSpin->setValue(0.01);
+        m_farPlaneSpin->setValue(100.0);
+        m_moveSpeedSpin->setValue(5.0);
+        m_mouseSensSpin->setValue(0.1);
+        m_ssaoCheck->setChecked(false);
+        m_bloomCheck->setChecked(false);
+        m_fxaaCheck->setChecked(true);
+        m_smaaCheck->setChecked(false);
+        m_taaCheck->setChecked(false);
+        m_ssrCheck->setChecked(false);
+        m_shadowQualitySpin->setValue(2048);
+        m_shadowCascadesSpin->setValue(2);
+        m_postProcessingCheck->setChecked(false);
+        break;
+
+    case 3: // First Person
+        m_fovSpin->setValue(90.0);
+        m_nearPlaneSpin->setValue(0.05);
+        m_farPlaneSpin->setValue(2000.0);
+        m_moveSpeedSpin->setValue(5.0);
+        m_mouseSensSpin->setValue(0.15);
+        m_ssaoCheck->setChecked(true);
+        m_bloomCheck->setChecked(true);
+        m_bloomStrengthSpin->setValue(0.4);
+        m_fxaaCheck->setChecked(true);
+        m_ssrCheck->setChecked(true);
+        m_shadowQualitySpin->setValue(4096);
+        m_shadowCascadesSpin->setValue(4);
+        m_shadowMaxDistSpin->setValue(250.0);
+        m_postProcessingCheck->setChecked(true);
+        break;
+
+    default: // Blank — reset to defaults
+        m_fovSpin->setValue(60.0);
+        m_nearPlaneSpin->setValue(0.1);
+        m_farPlaneSpin->setValue(1000.0);
+        m_moveSpeedSpin->setValue(3.0);
+        m_mouseSensSpin->setValue(0.1);
+        m_ssaoCheck->setChecked(true);
+        m_bloomCheck->setChecked(true);
+        m_bloomStrengthSpin->setValue(0.5);
+        m_fxaaCheck->setChecked(true);
+        m_ssrCheck->setChecked(false);
+        m_shadowQualitySpin->setValue(4096);
+        m_shadowCascadesSpin->setValue(4);
+        m_shadowMaxDistSpin->setValue(180.0);
+        m_postProcessingCheck->setChecked(true);
+        break;
+    }
+}
+
 nlohmann::json ProjectSettingsDialog::toSettingsJson() const
 {
     nlohmann::json j;
@@ -793,6 +912,168 @@ nlohmann::json ProjectSettingsDialog::toSettingsJson() const
     j["version"] = 1;
 
     return j;
+}
+
+// =============================================================================
+// Plugins tab
+// =============================================================================
+
+QWidget* ProjectSettingsDialog::buildPluginsTab()
+{
+    auto* scroll = new QScrollArea(this);
+    scroll->setWidgetResizable(true);
+
+    auto* content = new QWidget();
+    content->setObjectName("tabContent");
+    auto* mainLayout = new QVBoxLayout(content);
+    mainLayout->setContentsMargins(14, 14, 14, 14);
+    mainLayout->setSpacing(8);
+
+    auto* header = new VelixText("Select plugins to install with the project", content);
+    header->setPointSize(10);
+    header->setTextColor(QColor(180, 180, 180));
+    header->setBold(false);
+    mainLayout->addWidget(header);
+
+    m_pluginStatusLabel = new QLabel("Fetching available plugins...", content);
+    m_pluginStatusLabel->setStyleSheet("QLabel { color: #888888; font-size: 11px; }");
+    mainLayout->addWidget(m_pluginStatusLabel);
+
+    // Container for plugin checkboxes
+    m_pluginListLayout = new QVBoxLayout();
+    m_pluginListLayout->setSpacing(4);
+    mainLayout->addLayout(m_pluginListLayout);
+
+    mainLayout->addStretch(1);
+
+    scroll->setWidget(content);
+
+    // Start fetching manifest
+    fetchPluginManifest();
+
+    return scroll;
+}
+
+void ProjectSettingsDialog::fetchPluginManifest()
+{
+    m_pluginNetManager = new QNetworkAccessManager(this);
+
+    const QUrl url{"https://raw.githubusercontent.com/Dlyvern/EnginePlugins/main/manifest.json"};
+    QNetworkRequest req{url};
+    QNetworkReply* reply = m_pluginNetManager->get(req);
+    connect(reply, &QNetworkReply::finished, this, [this, reply]()
+    {
+        onPluginManifestFetched(reply);
+    });
+}
+
+void ProjectSettingsDialog::onPluginManifestFetched(QNetworkReply* reply)
+{
+    reply->deleteLater();
+
+    if (reply->error() != QNetworkReply::NoError)
+    {
+        m_pluginStatusLabel->setText("Could not fetch plugin list: " + reply->errorString());
+        return;
+    }
+
+    const QJsonDocument doc = QJsonDocument::fromJson(reply->readAll());
+    if (!doc.isObject())
+    {
+        m_pluginStatusLabel->setText("Invalid plugin manifest format.");
+        return;
+    }
+
+    static const char* platformKey =
+#if defined(Q_OS_WIN)
+        "windows";
+#else
+        "linux";
+#endif
+
+    const QJsonArray plugins = doc.object().value("plugins").toArray();
+    m_manifestPlugins.clear();
+
+    for (const QJsonValue& val : plugins)
+    {
+        const QJsonObject obj = val.toObject();
+        m_manifestPlugins.append({
+            obj.value("name").toString(),
+            obj.value("version").toString(),
+            obj.value("description").toString(),
+            obj.value("category").toString(),
+            obj.value(platformKey).toString()
+        });
+    }
+
+    if (m_manifestPlugins.isEmpty())
+    {
+        m_pluginStatusLabel->setText("No plugins found.");
+        return;
+    }
+
+    m_pluginStatusLabel->setText(
+        QString("%1 plugin(s) available — check the ones to install:").arg(m_manifestPlugins.size()));
+
+    // Build checkbox rows
+    for (const PluginEntry& entry : m_manifestPlugins)
+    {
+        auto* row = new QWidget();
+        row->setStyleSheet(
+            "QWidget#plugRow { background-color: #222222; border: 1px solid #333333;"
+            "  border-radius: 5px; }");
+        row->setObjectName("plugRow");
+
+        auto* rowLayout = new QHBoxLayout(row);
+        rowLayout->setContentsMargins(10, 8, 10, 8);
+        rowLayout->setSpacing(10);
+
+        auto* check = new QCheckBox(entry.name, row);
+        check->setStyleSheet("QCheckBox { color: #e0e0e0; font-size: 12px; font-weight: bold; }");
+        // Disable if no download URL
+        const bool available = !entry.downloadUrl.isEmpty();
+        check->setEnabled(available);
+        check->setChecked(false);
+        m_pluginSelection[entry.name] = false;
+
+        connect(check, &QCheckBox::toggled, this, [this, name = entry.name](bool checked)
+        {
+            m_pluginSelection[name] = checked;
+        });
+
+        auto* desc = new QLabel(entry.description, row);
+        desc->setWordWrap(true);
+        desc->setStyleSheet("QLabel { color: #888888; font-size: 11px; background: transparent; }");
+
+        auto* infoLayout = new QVBoxLayout();
+        infoLayout->setSpacing(2);
+        infoLayout->addWidget(check);
+        infoLayout->addWidget(desc);
+
+        rowLayout->addLayout(infoLayout, 1);
+
+        if (!available)
+        {
+            auto* badge = new QLabel("No binary", row);
+            badge->setStyleSheet("QLabel { color: #666666; font-size: 10px; background: transparent; }");
+            badge->setAlignment(Qt::AlignCenter);
+            badge->setFixedWidth(70);
+            rowLayout->addWidget(badge);
+        }
+
+        m_pluginListLayout->addWidget(row);
+    }
+}
+
+QVector<PluginEntry> ProjectSettingsDialog::selectedPlugins() const
+{
+    QVector<PluginEntry> result;
+    for (const PluginEntry& entry : m_manifestPlugins)
+    {
+        if (m_pluginSelection.value(entry.name, false) && !entry.downloadUrl.isEmpty())
+            result.append(entry);
+    }
+    return result;
 }
 
 void ProjectSettingsDialog::paintEvent(QPaintEvent*)

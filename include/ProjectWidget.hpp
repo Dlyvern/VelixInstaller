@@ -18,6 +18,10 @@ public:
 
     [[nodiscard]] const project::ProjectData& getProjectData() const;
 
+    void reloadThumbnail();
+
+    static QString thumbnailPath(const std::string& projectDir);
+
     ~ProjectWidget() override;
 
 protected:
@@ -27,16 +31,24 @@ protected:
 
 signals:
     void openRequested(const QString& projectPath);
+    void editRequested(const QString& projectPath, const QString& projectName);
     void removeRequested(const QString& projectFilePath);
 
 private:
+    void loadThumbnail();
+
     project::ProjectData m_projectData;
     FireButton* m_openButton{nullptr};
+    FireButton* m_editButton{nullptr};
     FireButton* m_removeButton{nullptr};
     VelixText* m_projectNameLabel{nullptr};
     VelixText* m_projectPathLabel{nullptr};
     QPixmap m_logo;
+    QPixmap m_thumbnail;
+    QString m_diskUsage;
     bool m_isHovered{false};
+
+    void calculateDiskUsage();
 };
 
 

@@ -1,0 +1,60 @@
+{
+  "samples": [
+    {
+      "name": "3D FPS Starter",
+      "description": "First-person controller with basic movement, camera look, and placeholder weapon. Great starting point for shooter projects.",
+      "category": "3D",
+      "download_url": "",
+      "size": "12 MB",
+      "engine_version": "2.3"
+    },
+    {
+      "name": "2D Platformer Kit",
+      "description": "Side-scrolling platformer with tile-based levels, character animation, and a simple enemy AI.",
+      "category": "2D",
+      "download_url": "",
+      "size": "8 MB",
+      "engine_version": "2.3"
+    },
+    {
+      "name": "Third Person Adventure",
+      "description": "Third-person character controller with orbit camera, terrain navigation, and interaction system.",
+      "category": "3D",
+      "download_url": "",
+      "size": "28 MB",
+      "engine_version": "2.4"
+    },
+    {
+      "name": "Top-Down RPG",
+      "description": "Isometric RPG template with inventory system, dialogue trees, and turn-based combat framework.",
+      "category": "2D",
+      "download_url": "",
+      "size": "15 MB",
+      "engine_version": "2.3"
+    },
+    {
+      "name": "Vehicle Physics Demo",
+      "description": "Arcade-style vehicle controller with suspension, drift mechanics, and a test track.",
+      "category": "Demo",
+      "download_url": "",
+      "size": "35 MB",
+      "engine_version": "2.4"
+    },
+    {
+      "name": "Blank Template",
+      "description": "Minimal project with an empty scene, default camera, and standard folder structure. The cleanest starting point.",
+      "category": "Template",
+      "download_url": "",
+      "size": "2 MB",
+      "engine_version": "2.0"
+    },
+    {
+      "name": "Terrain & Foliage Showcase",
+      "description": "Procedural terrain with foliage painting, water shader, and day-night cycle. Requires TerrainPlugin.",
+      "category": "Demo",
+      "download_url": "",
+      "size": "52 MB",
+      "engine_version": "2.4"
+    }
+  ]
+}

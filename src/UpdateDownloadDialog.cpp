@@ -11,7 +11,128 @@
 #include <QPropertyAnimation>
 #include <QScrollArea>
 #include <QTextEdit>
+#include <QDirIterator>
+#include <QCoreApplication>
 #include <QDebug>
+
+// ── SlideshowWidget ───────────────────────────────────────────────────────────
+SlideshowWidget::SlideshowWidget(QWidget* parent)
+    : QWidget(parent)
+{
+    setFixedHeight(200);
+    setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+
+    m_fadeAnim = new QPropertyAnimation(this, "blendAlpha", this);
+    m_fadeAnim->setDuration(600);
+    m_fadeAnim->setEasingCurve(QEasingCurve::InOutCubic);
+
+    m_slideTimer = new QTimer(this);
+    m_slideTimer->setInterval(4000);
+    connect(m_slideTimer, &QTimer::timeout, this, &SlideshowWidget::advance);
+}
+
+void SlideshowWidget::loadFromDir(const QString& dir)
+{
+    m_images.clear();
+    QDirIterator it(dir, {"*.png","*.jpg","*.jpeg","*.webp"}, QDir::Files);
+    while (it.hasNext())
+    {
+        QPixmap px(it.next());
+        if (!px.isNull())
+            m_images.append(px);
+    }
+
+    if (m_images.size() > 1)
+        m_slideTimer->start();
+
+    m_current      = 0;
+    m_next         = 0;
+    m_blendAlpha   = 1.0;
+    update();
+}
+
+void SlideshowWidget::advance()
+{
+    if (m_images.size() < 2) return;
+    if (m_fadeAnim->state() == QAbstractAnimation::Running) return;
+
+    m_next = (m_current + 1) % m_images.size();
+    m_blendAlpha = 0.0;
+
+    m_fadeAnim->setStartValue(0.0);
+    m_fadeAnim->setEndValue(1.0);
+    connect(m_fadeAnim, &QPropertyAnimation::finished, this, [this]
+    {
+        m_current    = m_next;
+        m_blendAlpha = 1.0;
+        disconnect(m_fadeAnim, &QPropertyAnimation::finished, this, nullptr);
+        update();
+    }, Qt::SingleShotConnection);
+    m_fadeAnim->start();
+}
+
+void SlideshowWidget::paintEvent(QPaintEvent*)
+{
+    if (m_images.isEmpty()) return;
+
+    QPainter p(this);
+    p.setRenderHint(QPainter::Antialiasing);
+    p.setRenderHint(QPainter::SmoothPixmapTransform);
+
+    // Rounded clip
+    QPainterPath clip;
+    clip.addRoundedRect(rect(), 10, 10);
+    p.setClipPath(clip);
+
+    auto drawSlide = [&](int idx, qreal opacity)
+    {
+        if (idx < 0 || idx >= m_images.size()) return;
+        p.setOpacity(opacity);
+        const QPixmap& px  = m_images[idx];
+        // Scale to fill, centred
+        const QSize    sz  = px.size().scaled(size(), Qt::KeepAspectRatioByExpanding);
+        const QPoint   off = QPoint((width() - sz.width()) / 2,
+                                    (height() - sz.height()) / 2);
+        p.drawPixmap(off, px.scaled(sz, Qt::IgnoreAspectRatio, Qt::SmoothTransformation));
+    };
+
+    // Draw fading-out current, then fading-in next
+    if (m_fadeAnim->state() == QAbstractAnimation::Running)
+    {
+        drawSlide(m_current, 1.0 - m_blendAlpha);
+        drawSlide(m_next,    m_blendAlpha);
+    }
+    else
+    {
+        drawSlide(m_current, 1.0);
+    }
+
+    // Dark gradient overlay at the bottom (makes dots readable)
+    p.setOpacity(1.0);
+    QLinearGradient grad(0, height() - 40, 0, height());
+    grad.setColorAt(0, Qt::transparent);
+    grad.setColorAt(1, QColor(0, 0, 0, 160));
+    p.fillRect(rect(), grad);
+
+    // Navigation dots
+    if (m_images.size() > 1)
+    {
+        const int   dotR   = 4;
+        const int   dotGap = 12;
+        const int   total  = m_images.size() * dotGap - (dotGap - dotR * 2);
+        int         x      = (width() - total) / 2;
+        const int   y      = height() - 12;
+
+        for (int i = 0; i < m_images.size(); ++i)
+        {
+            const bool active = (i == m_current);
+            p.setBrush(active ? QColor(255, 106, 0) : QColor(180, 180, 180, 140));
+            p.setPen(Qt::NoPen);
+            p.drawEllipse(QPoint(x + dotR, y), active ? dotR + 1 : dotR, active ? dotR + 1 : dotR);
+            x += dotGap;
+        }
+    }
+}
 
 // ── Hints ─────────────────────────────────────────────────────────────────────
 const QStringList UpdateDownloadDialog::s_hints = {
@@ -137,24 +258,20 @@ UpdateDownloadDialog::UpdateDownloadDialog(const QString& version,
         mainLayout->addLayout(row);
     }
 
-    // ── Spinner ───────────────────────────────────────────────────────────
-    m_spinner = new SpinnerWidget(72, root);
-    m_spinner->start();
-    mainLayout->addWidget(m_spinner, 0, Qt::AlignHCenter);
+    // ── Slideshow ─────────────────────────────────────────────────────────
+    m_slideshow = new SlideshowWidget(root);
+    const QString slidesDir = QCoreApplication::applicationDirPath() + "/resources/slides";
+    m_slideshow->loadFromDir(slidesDir);
+    if (m_slideshow->hasImages())
+        mainLayout->addWidget(m_slideshow);
+    else
+        m_slideshow->hide();
 
-    // ── Status / speed ────────────────────────────────────────────────────
+    // ── Progress row: "12.2 MB / 36.1 MB" ────────────────────────────────
     m_statusLabel = new VelixText("Starting download\u2026", root);
     m_statusLabel->setPointSize(10);
-    m_statusLabel->setTextColor(QColor(180, 180, 180));
-    m_statusLabel->setAlignment(Qt::AlignCenter);
-
-    m_speedLabel = new VelixText("", root);
-    m_speedLabel->setPointSize(9);
-    m_speedLabel->setTextColor(QColor(255, 106, 0));
-    m_speedLabel->setAlignment(Qt::AlignCenter);
-
+    m_statusLabel->setTextColor(QColor(200, 200, 200));
     mainLayout->addWidget(m_statusLabel);
-    mainLayout->addWidget(m_speedLabel);
 
     // ── Progress bar ──────────────────────────────────────────────────────
     m_progressBar = new VelixProgressBar(root);
@@ -170,24 +287,11 @@ UpdateDownloadDialog::UpdateDownloadDialog(const QString& version,
     mainLayout->addWidget(divider);
 
     // ── Hint ─────────────────────────────────────────────────────────────
-    {
-        auto* hintRow = new QHBoxLayout;
-        hintRow->setContentsMargins(0,0,0,0);
-        hintRow->setSpacing(8);
-
-        auto* bulb = new VelixText("\U0001F4A1", root);
-        bulb->setPointSize(11);
-        bulb->setFixedWidth(24);
-
-        m_hintLabel = new VelixText(s_hints.first(), root);
-        m_hintLabel->setPointSize(9);
-        m_hintLabel->setTextColor(QColor(160, 160, 160));
-        m_hintLabel->setWordWrap(true);
-
-        hintRow->addWidget(bulb, 0, Qt::AlignTop);
-        hintRow->addWidget(m_hintLabel, 1);
-        mainLayout->addLayout(hintRow);
-    }
+    m_hintLabel = new VelixText(s_hints.first(), root);
+    m_hintLabel->setPointSize(9);
+    m_hintLabel->setTextColor(QColor(140, 140, 140));
+    m_hintLabel->setWordWrap(true);
+    mainLayout->addWidget(m_hintLabel);
 
     // ── Changelog ─────────────────────────────────────────────────────────
     if (!changelog.isEmpty())
@@ -265,12 +369,9 @@ void UpdateDownloadDialog::onProgress(qint64 received, qint64 total)
     m_statusLabel->setText(QString("%1 MB  /  %2 MB").arg(mb, 0, 'f', 1).arg(mbTotal, 0, 'f', 1));
 }
 
-void UpdateDownloadDialog::onSpeed(double kbps)
+void UpdateDownloadDialog::onSpeed(double /*kbps*/)
 {
-    if (kbps >= 1024.0)
-        m_speedLabel->setText(QString("%1 MB/s").arg(kbps / 1024.0, 0, 'f', 2));
-    else
-        m_speedLabel->setText(QString("%1 KB/s").arg(kbps, 0, 'f', 1));
+    // speed display removed — only size progress is shown
 }
 
 void UpdateDownloadDialog::onFinished()
@@ -279,8 +380,6 @@ void UpdateDownloadDialog::onFinished()
     m_hintTimer->stop();
     m_progressBar->setValue(100);
     m_statusLabel->setText("Installing update\u2026");
-    m_speedLabel->setText("");
-    m_spinner->setFinished(true);
     m_minimizeBtn->setEnabled(false);
 }
 
@@ -289,8 +388,6 @@ void UpdateDownloadDialog::onError(const QString& error)
     m_done = true;
     m_hintTimer->stop();
     m_statusLabel->setText("Download failed: " + error);
-    m_speedLabel->setText("");
-    m_spinner->setFinished(false);
     m_minimizeBtn->setText("Close");
     m_minimizeBtn->setEnabled(true);
     disconnect(m_minimizeBtn, nullptr, nullptr, nullptr);

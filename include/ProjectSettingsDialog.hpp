@@ -11,8 +11,13 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QMouseEvent>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QLabel>
+#include <QProgressBar>
 
 #include "json/json.hpp"
+#include "PluginManagerDialog.hpp"
 
 class FireButton;
 class VelixText;
@@ -24,6 +29,7 @@ public:
     explicit ProjectSettingsDialog(QWidget* parent = nullptr);
 
     [[nodiscard]] nlohmann::json toSettingsJson() const;
+    [[nodiscard]] QVector<PluginEntry> selectedPlugins() const;
 
 protected:
     void paintEvent(QPaintEvent* event) override;
@@ -34,8 +40,16 @@ private:
     QWidget* buildCameraTab();
     QWidget* buildRenderingTab();
     QWidget* buildRtxTab();
+    QWidget* buildPluginsTab();
+
+    void fetchPluginManifest();
+    void onPluginManifestFetched(QNetworkReply* reply);
 
     static bool detectRtxCapability();
+
+    // Template
+    QComboBox* m_templateCombo{nullptr};
+    void applyTemplate(int index);
 
     // Camera
     QDoubleSpinBox* m_fovSpin{nullptr};
@@ -106,6 +120,13 @@ private:
     QCheckBox*      m_rtReflectionsCheck{nullptr};
     QComboBox*      m_rtModeCombo{nullptr};
     bool            m_rtxCapable{false};
+
+    // Plugins
+    QNetworkAccessManager* m_pluginNetManager{nullptr};
+    QVBoxLayout*           m_pluginListLayout{nullptr};
+    QLabel*                m_pluginStatusLabel{nullptr};
+    QVector<PluginEntry>   m_manifestPlugins;
+    QMap<QString, bool>    m_pluginSelection;   // name -> checked
 
     QPoint m_dragOffset;
     bool   m_dragging{false};

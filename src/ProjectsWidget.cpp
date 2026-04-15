@@ -16,6 +16,14 @@
 #include <QPalette>
 #include <QProcess>
 #include <QProcessEnvironment>
+#include <QScreen>
+#include <QGuiApplication>
+#include <QTimer>
+#include <QWindow>
+
+#if defined(Q_OS_WIN)
+#include <windows.h>
+#endif
 
 #include <fstream>
 #include <filesystem>
@@ -27,6 +35,7 @@
 #include "CrashReportDialog.hpp"
 #include "VelixConfirmDialog.hpp"
 #include "ToastNotification.hpp"
+#include "PluginManagerDialog.hpp"
 
 #include <QLineEdit>
 
@@ -353,6 +362,7 @@ void ProjectsWidget::addProjectCard(const project::ProjectData& projectData)
 
     auto* projectCard = new ProjectWidget(projectData, this);
     connect(projectCard, &ProjectWidget::openRequested, this, &ProjectsWidget::onOpenProjectPath);
+    connect(projectCard, &ProjectWidget::editRequested, this, &ProjectsWidget::onEditProjectRequested);
     connect(projectCard, &ProjectWidget::removeRequested, this, &ProjectsWidget::onRemoveProjectRequested);
 
     const int insertIndex = std::max(0, m_projectsLayout->count() - 1);
@@ -427,6 +437,21 @@ void ProjectsWidget::onCreateProjectRequested()
     {
         QMessageBox::warning(this, "Create Project", "Failed to create project. Check path and permissions.");
         return;
+    }
+
+    // Download selected plugins into the project's Plugins/ directory
+    const QVector<PluginEntry> selectedPlugins = settingsDialog.selectedPlugins();
+    if (!selectedPlugins.isEmpty())
+    {
+        const QString pluginsDir = QDir(QString::fromStdString(projectData.path)).filePath("Plugins");
+        QDir().mkpath(pluginsDir);
+
+        auto* pluginDlg = new PluginManagerDialog(
+            QString::fromStdString(projectData.path),
+            QString::fromStdString(projectData.name),
+            this);
+        pluginDlg->setAttribute(Qt::WA_DeleteOnClose);
+        pluginDlg->exec();
     }
 
     addProjectCard(projectData);
@@ -562,7 +587,11 @@ void ProjectsWidget::onOpenProjectPath(const QString& projectPath)
             "Open Project",
             QString("Failed to launch Velix executable:\n%1").arg(executablePath)
         );
+        return;
     }
+
+    // Capture a thumbnail of the editor window after it has had time to render
+    captureProjectThumbnail(projectPath, process->processId());
 }
 
 QString ProjectsWidget::resolveExecutableFromInstallPath(const QString& installPath) const
@@ -619,6 +648,13 @@ QString ProjectsWidget::resolveExecutableFromInstallPath(const QString& installP
     }
 
     return {};
+}
+
+void ProjectsWidget::onEditProjectRequested(const QString& projectPath, const QString& projectName)
+{
+    auto* dialog = new PluginManagerDialog(projectPath, projectName, this);
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    dialog->exec();
 }
 
 void ProjectsWidget::onRemoveProjectRequested(const QString& projectFilePath)
@@ -683,4 +719,166 @@ void ProjectsWidget::onRemoveProjectRequested(const QString& projectFilePath)
         m_projectsLayout->removeWidget(card);
         card->deleteLater();
     }
+}
+
+ProjectWidget* ProjectsWidget::findCardByPath(const QString& projectPath) const
+{
+    const QString normalized = normalizedAbsolutePath(projectPath);
+    for (auto* w : m_projectWidgets)
+    {
+        if (normalizedAbsolutePath(QString::fromStdString(w->getProjectData().path)) == normalized)
+            return w;
+    }
+    return nullptr;
+}
+
+// ---------------------------------------------------------------------------
+// Platform helpers: find the main visible window owned by a given PID
+// ---------------------------------------------------------------------------
+
+#if defined(Q_OS_WIN)
+namespace
+{
+struct EnumWindowCtx
+{
+    DWORD  targetPid{0};
+    HWND   bestHwnd{nullptr};
+    int    bestArea{0};
+};
+
+static BOOL CALLBACK enumWindowsForPid(HWND hwnd, LPARAM lParam)
+{
+    auto* ctx = reinterpret_cast<EnumWindowCtx*>(lParam);
+
+    DWORD windowPid = 0;
+    GetWindowThreadProcessId(hwnd, &windowPid);
+    if (windowPid != ctx->targetPid)
+        return TRUE;
+
+    // Skip invisible or minimized windows
+    if (!IsWindowVisible(hwnd) || IsIconic(hwnd))
+        return TRUE;
+
+    // Skip tool windows (tooltips, floating palettes)
+    const LONG exStyle = GetWindowLongW(hwnd, GWL_EXSTYLE);
+    if (exStyle & WS_EX_TOOLWINDOW)
+        return TRUE;
+
+    // Prefer the largest window (likely the main editor frame)
+    RECT rc{};
+    GetWindowRect(hwnd, &rc);
+    const int area = (rc.right - rc.left) * (rc.bottom - rc.top);
+    if (area > ctx->bestArea)
+    {
+        ctx->bestArea = area;
+        ctx->bestHwnd = hwnd;
+    }
+
+    return TRUE;   // keep enumerating
+}
+} // namespace
+
+static WId findWindowByPid(qint64 pid)
+{
+    EnumWindowCtx ctx;
+    ctx.targetPid = static_cast<DWORD>(pid);
+    EnumWindows(enumWindowsForPid, reinterpret_cast<LPARAM>(&ctx));
+    return reinterpret_cast<WId>(ctx.bestHwnd);
+}
+
+#elif defined(Q_OS_LINUX)
+
+static WId findWindowByPid(qint64 pid)
+{
+    // Try xdotool first (works on X11)
+    QProcess proc;
+    proc.start("xdotool", {"search", "--pid", QString::number(pid)});
+    if (proc.waitForFinished(3000))
+    {
+        const QString output = QString::fromUtf8(proc.readAllStandardOutput()).trimmed();
+        if (!output.isEmpty())
+        {
+            // Take the last ID — usually the main/top-level window
+            const QStringList ids = output.split('\n');
+            bool ok = false;
+            const WId wid = ids.last().trimmed().toULongLong(&ok);
+            if (ok && wid != 0)
+                return wid;
+        }
+    }
+
+    // Fallback: try wmctrl -lp and match PID column
+    QProcess wmctrl;
+    wmctrl.start("wmctrl", {"-lp"});
+    if (wmctrl.waitForFinished(3000))
+    {
+        const QString pidStr = QString::number(pid);
+        const QStringList lines =
+            QString::fromUtf8(wmctrl.readAllStandardOutput()).split('\n');
+        for (const QString& line : lines)
+        {
+            const QStringList cols = line.simplified().split(' ');
+            // columns: windowId desktopNum pid host title...
+            if (cols.size() >= 3 && cols[2] == pidStr)
+            {
+                bool ok = false;
+                const WId wid = cols[0].toULongLong(&ok, 0);
+                if (ok && wid != 0)
+                    return wid;
+            }
+        }
+    }
+
+    return 0;
+}
+
+#else
+
+static WId findWindowByPid(qint64 /*pid*/) { return 0; }
+
+#endif
+
+// ---------------------------------------------------------------------------
+
+void ProjectsWidget::captureProjectThumbnail(const QString& projectPath, qint64 pid)
+{
+    // Wait for the editor window to fully render, then capture it.
+    // Two passes: early (5 s) and late (12 s) for slower machines.
+    auto doCapture = [this, projectPath, pid]()
+    {
+        QScreen* screen = QGuiApplication::primaryScreen();
+        if (!screen)
+            return;
+
+        WId wid = findWindowByPid(pid);
+
+        QPixmap screenshot;
+        if (wid != 0)
+        {
+            screenshot = screen->grabWindow(wid);
+        }
+        else
+        {
+            // Last resort: grab the whole screen.
+            // This can happen on Wayland or if the window tools aren't installed.
+            screenshot = screen->grabWindow(0);
+        }
+
+        if (screenshot.isNull())
+            return;
+
+        // Scale to a reasonable thumbnail size (2× card display for sharpness)
+        const QPixmap thumbnail = screenshot.scaled(
+            440, 236, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
+
+        const QString savePath = ProjectWidget::thumbnailPath(projectPath.toStdString());
+        thumbnail.save(savePath, "PNG");
+
+        // Refresh the card if it's still around
+        if (auto* card = findCardByPath(projectPath))
+            card->reloadThumbnail();
+    };
+
+    QTimer::singleShot(5000, this, doCapture);
+    QTimer::singleShot(12000, this, doCapture);
 }

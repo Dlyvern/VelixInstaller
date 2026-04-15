@@ -29,6 +29,12 @@ public slots:
     void onNoStableUpdate();
     void onNoUnstableUpdate();
     void onCheckFailed();
+    void showDownloadDialog();
+
+signals:
+    void downloadStarted(const QString& version);
+    void downloadProgressChanged(int percent);
+    void downloadEnded();
 
 protected:
     void paintEvent(QPaintEvent* event) override;
