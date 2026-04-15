@@ -7,6 +7,10 @@ on:
     branches: [ main ]
 
 jobs:
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # WINDOWS — installer + raw zip
+  # ─────────────────────────────────────────────────────────────────────────────
   build-windows:
     runs-on: windows-latest
     steps:
@@ -29,61 +33,57 @@ jobs:
         shell: powershell
         run: |
           $cmakeArgs = @('-S', '.', '-B', 'build', '-G', 'Visual Studio 17 2022', '-A', 'x64')
-
           if (-not [string]::IsNullOrWhiteSpace($env:QT_INSTALL_DIR)) {
             $cmakeArgs += "-DCMAKE_PREFIX_PATH=$env:QT_INSTALL_DIR"
           } elseif (-not [string]::IsNullOrWhiteSpace($env:Qt6_DIR)) {
             $cmakeArgs += "-DQt6_DIR=$env:Qt6_DIR"
           }
-
           cmake @cmakeArgs
 
       - name: Build
         run: cmake --build build --config Release
 
-      - name: Copy resources folder
+      - name: Copy resources
         shell: powershell
-        run: |
-          Copy-Item -Recurse -Force resources build/Release/resources
+        run: Copy-Item -Recurse -Force resources build/Release/resources
 
       - name: Deploy Qt dependencies
         shell: powershell
         run: |
           $windeployqt = $null
-
           $cmd = Get-Command windeployqt.exe -ErrorAction SilentlyContinue
-          if ($cmd) {
-            $windeployqt = $cmd.Source
-          }
-
+          if ($cmd) { $windeployqt = $cmd.Source }
           if (-not $windeployqt -and -not [string]::IsNullOrWhiteSpace($env:QT_INSTALL_DIR)) {
             $candidate = Join-Path $env:QT_INSTALL_DIR 'bin\windeployqt.exe'
-            if (Test-Path $candidate) {
-              $windeployqt = $candidate
-            }
+            if (Test-Path $candidate) { $windeployqt = $candidate }
           }
-
           if (-not $windeployqt) {
-            throw "windeployqt.exe not found. QT_INSTALL_DIR='$env:QT_INSTALL_DIR' Qt6_DIR='$env:Qt6_DIR'"
+            throw "windeployqt.exe not found. QT_INSTALL_DIR='$env:QT_INSTALL_DIR'"
           }
-
           & $windeployqt --release --compiler-runtime build/Release/VelixInstall.exe
 
+      # ── Raw zip (for self-updater) ─────────────────────────────────────────
+      - name: Create raw Windows zip
+        shell: powershell
+        run: |
+          Compress-Archive -Path build/Release/* -DestinationPath VelixInstall-windows.zip
+
+      - name: Upload Windows raw zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: VelixInstall-windows
+          path: VelixInstall-windows.zip
+
+      # ── Inno Setup installer ───────────────────────────────────────────────
       - name: Install Inno Setup
         shell: powershell
         run: choco install innosetup -y
 
-      - name: Build Windows installer (.exe)
+      - name: Build Windows installer
         shell: powershell
         run: |
           New-Item -ItemType Directory -Force build\installer\output | Out-Null
-
-          $appVersion = if (-not [string]::IsNullOrWhiteSpace($env:GITHUB_RUN_NUMBER)) {
-            "0.1.$env:GITHUB_RUN_NUMBER"
-          } else {
-            "0.1.0"
-          }
-
+          $appVersion = if ($env:GITHUB_RUN_NUMBER) { "0.1.$env:GITHUB_RUN_NUMBER" } else { "0.1.0" }
           @"
           [Setup]
           AppId={{4C2FA5BD-3B40-4898-9D35-FDA4A316F489}
@@ -119,10 +119,7 @@ jobs:
           "@ | Set-Content -Path VelixInstall.iss -Encoding UTF8
 
           $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
-          if (!(Test-Path $iscc)) {
-            throw "ISCC.exe not found at '$iscc'"
-          }
-
+          if (!(Test-Path $iscc)) { throw "ISCC.exe not found at '$iscc'" }
           & $iscc VelixInstall.iss
 
       - name: Upload Windows installer
@@ -131,78 +128,11 @@ jobs:
           name: VelixInstall-windows-installer
           path: build/installer/output/VelixInstallSetup.exe
 
+  # ─────────────────────────────────────────────────────────────────────────────
+  # LINUX — raw zip (GLIBC 2.35, compatible with Ubuntu 22.04+)
+  # ─────────────────────────────────────────────────────────────────────────────
   build-linux:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Install Qt6
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y qt6-base-dev qt6-base-dev-tools qt6-declarative-dev qt6-tools-dev qt6-tools-dev-tools libqt6svg6-dev
-
-      - name: Configure CMake
-        run: cmake -S . -B build -DCMAKE_PREFIX_PATH=/usr/lib/x86_64-linux-gnu/cmake/Qt6
-
-      - name: Build
-        run: cmake --build build --config Release
-
-      - name: Prepare folder for distribution
-        run: |
-          mkdir -p build/package/bin
-          cp build/VelixInstall build/package/bin/
-          cp -r resources build/package/bin/
-
-          # Copy Qt runtime libraries.
-          cp /usr/lib/x86_64-linux-gnu/libQt6Core.so.6 build/package/bin/
-          cp /usr/lib/x86_64-linux-gnu/libQt6Gui.so.6 build/package/bin/
-          cp /usr/lib/x86_64-linux-gnu/libQt6Widgets.so.6 build/package/bin/
-          cp /usr/lib/x86_64-linux-gnu/libQt6Svg.so.6 build/package/bin/
-          cp /usr/lib/x86_64-linux-gnu/libQt6DBus.so.6 build/package/bin/
-          cp /usr/lib/x86_64-linux-gnu/libQt6Network.so.6 build/package/bin/
-          cp /usr/lib/x86_64-linux-gnu/libQt6XcbQpa.so.6 build/package/bin/ || true
-
-          # Qt6 on Ubuntu links against ICU; include those for portability.
-          cp /usr/lib/x86_64-linux-gnu/libicudata.so.* build/package/bin/ || true
-          cp /usr/lib/x86_64-linux-gnu/libicuuc.so.* build/package/bin/ || true
-          cp /usr/lib/x86_64-linux-gnu/libicui18n.so.* build/package/bin/ || true
-
-          # Copy required Qt plugins for QWidget/XCB runtime.
-          mkdir -p build/package/bin/plugins/platforms
-          mkdir -p build/package/bin/plugins/imageformats
-          mkdir -p build/package/bin/plugins/xcbglintegrations
-          cp /usr/lib/x86_64-linux-gnu/qt6/plugins/platforms/libqxcb.so build/package/bin/plugins/platforms/
-          cp /usr/lib/x86_64-linux-gnu/qt6/plugins/imageformats/libqsvg.so build/package/bin/plugins/imageformats/ || true
-          cp /usr/lib/x86_64-linux-gnu/qt6/plugins/imageformats/libqjpeg.so build/package/bin/plugins/imageformats/ || true
-          cp /usr/lib/x86_64-linux-gnu/qt6/plugins/imageformats/libqgif.so build/package/bin/plugins/imageformats/ || true
-          cp /usr/lib/x86_64-linux-gnu/qt6/plugins/xcbglintegrations/libqxcb-egl-integration.so build/package/bin/plugins/xcbglintegrations/ || true
-          cp /usr/lib/x86_64-linux-gnu/qt6/plugins/xcbglintegrations/libqxcb-glx-integration.so build/package/bin/plugins/xcbglintegrations/ || true
-
-          # Ensure Qt resolves plugins from the local package.
-          cat > build/package/bin/qt.conf << 'EOF'
-          [Paths]
-          Plugins=plugins
-          EOF
-
-          # Create a wrapper script to run the binary
-          cat > build/package/bin/run.sh << 'EOF'
-          #!/bin/bash
-          DIR="$(cd "$(dirname "$0")" && pwd)"
-          export LD_LIBRARY_PATH="$DIR:${LD_LIBRARY_PATH}"
-          export QT_PLUGIN_PATH="$DIR/plugins"
-          exec "$DIR/VelixInstall" "$@"
-          EOF
-          chmod +x build/package/bin/run.sh
-
-      - name: Upload Linux artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: VelixInstall-linux
-          path: build/package/bin/
-
-  build-linux-appimage:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -211,14 +141,101 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            qt6-base-dev qt6-base-dev-tools qt6-tools-dev-tools \
-            wget file desktop-file-utils patchelf fuse3 imagemagick
+            qt6-base-dev \
+            qt6-base-dev-tools \
+            qt6-tools-dev-tools \
+            libqt6network6 \
+            libgl1-mesa-dev \
+            libxcb-cursor0 \
+            zip
 
       - name: Configure CMake
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=/usr/lib/x86_64-linux-gnu/cmake/Qt6
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 
       - name: Build
-        run: cmake --build build --config Release
+        run: cmake --build build --parallel
+
+      - name: Bundle into zip
+        run: |
+          mkdir -p dist
+          cp build/VelixInstall dist/
+          chmod +x dist/VelixInstall
+          cp -r resources dist/
+
+          # Bundle Qt shared libs so the binary runs without a system Qt install
+          QT_LIB=/usr/lib/x86_64-linux-gnu
+          for lib in \
+            libQt6Core.so.6 \
+            libQt6Gui.so.6 \
+            libQt6Widgets.so.6 \
+            libQt6Network.so.6 \
+            libQt6DBus.so.6 \
+            libQt6XcbQpa.so.6; do
+            [ -f "$QT_LIB/$lib" ] && cp "$QT_LIB/$lib" dist/ || true
+          done
+
+          # ICU (required by Qt6)
+          for lib in "$QT_LIB"/libicudata.so.* "$QT_LIB"/libicuuc.so.* "$QT_LIB"/libicui18n.so.*; do
+            [ -f "$lib" ] && cp "$lib" dist/ || true
+          done
+
+          # Qt platform plugin
+          mkdir -p dist/plugins/platforms dist/plugins/imageformats
+          QT_PLUGINS=/usr/lib/x86_64-linux-gnu/qt6/plugins
+          cp "$QT_PLUGINS/platforms/libqxcb.so"            dist/plugins/platforms/ || true
+          cp "$QT_PLUGINS/imageformats/libqjpeg.so"        dist/plugins/imageformats/ || true
+          cp "$QT_PLUGINS/imageformats/libqsvg.so"         dist/plugins/imageformats/ || true
+
+          # qt.conf so Qt finds its plugins relative to the binary
+          printf '[Paths]\nPlugins=plugins\n' > dist/qt.conf
+
+          # Launcher script
+          { echo '#!/bin/bash'
+            echo 'DIR="$(cd "$(dirname "$0")" && pwd)"'
+            echo 'export LD_LIBRARY_PATH="$DIR:${LD_LIBRARY_PATH}"'
+            echo 'export QT_PLUGIN_PATH="$DIR/plugins"'
+            echo 'exec "$DIR/VelixInstall" "$@"'
+          } > dist/run.sh
+          chmod +x dist/run.sh
+
+          cd dist && zip -r ../VelixInstall-linux.zip .
+
+      - name: Upload Linux zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: VelixInstall-linux
+          path: VelixInstall-linux.zip
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # LINUX AppImage
+  # ─────────────────────────────────────────────────────────────────────────────
+  build-linux-appimage:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            qt6-base-dev \
+            qt6-base-dev-tools \
+            qt6-tools-dev-tools \
+            libqt6network6 \
+            libgl1-mesa-dev \
+            libxcb-cursor0 \
+            libfuse2 \
+            file \
+            desktop-file-utils \
+            patchelf \
+            imagemagick
+
+      - name: Configure CMake
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --parallel
 
       - name: Prepare AppDir
         run: |
@@ -227,42 +244,42 @@ jobs:
           mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
 
           cp build/VelixInstall AppDir/usr/bin/VelixInstall
+          chmod +x AppDir/usr/bin/VelixInstall
           cp -r resources AppDir/usr/bin/resources
-          convert resources/VelixFire.png -resize 256x256 -background none -gravity center -extent 256x256 AppDir/usr/share/icons/hicolor/256x256/apps/velixinstall.png
 
-          cat > AppDir/VelixInstall.desktop << 'EOF'
-          [Desktop Entry]
-          Type=Application
-          Name=VelixInstall
-          Exec=VelixInstall
-          Icon=velixinstall
-          Categories=Development;
-          EOF
+          convert resources/VelixFire.png \
+            -resize 256x256 -background none -gravity center -extent 256x256 \
+            AppDir/usr/share/icons/hicolor/256x256/apps/velixinstall.png
+
+          # Desktop file — no leading whitespace or it will be rejected
+          { echo '[Desktop Entry]'
+            echo 'Type=Application'
+            echo 'Name=VelixInstall'
+            echo 'Exec=VelixInstall'
+            echo 'Icon=velixinstall'
+            echo 'Categories=Development;'
+          } > AppDir/VelixInstall.desktop
+
+      - name: Download linuxdeploy
+        run: |
+          wget -nv -O linuxdeploy https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          wget -nv -O linuxdeploy-plugin-qt https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
+          chmod +x linuxdeploy linuxdeploy-plugin-qt
 
       - name: Build AppImage
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: "1"   # run without FUSE (no kernel support in GHA)
+          VERSION: ${{ github.run_number }}
         run: |
-          wget -nv -O linuxdeploy-x86_64.AppImage https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
-          wget -nv -O linuxdeploy-plugin-qt-x86_64.AppImage https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
-          chmod +x linuxdeploy-x86_64.AppImage linuxdeploy-plugin-qt-x86_64.AppImage
-
-          if command -v qmake6 >/dev/null 2>&1; then
-            export QMAKE="$(command -v qmake6)"
-          elif command -v qmake >/dev/null 2>&1; then
-            export QMAKE="$(command -v qmake)"
-          else
-            echo "qmake not found" >&2
-            exit 1
-          fi
-
-          export VERSION="${GITHUB_SHA::7}"
-          ./linuxdeploy-x86_64.AppImage \
+          export QMAKE="$(command -v qmake6 || command -v qmake)"
+          ./linuxdeploy \
             --appdir AppDir \
             --desktop-file AppDir/VelixInstall.desktop \
             --icon-file AppDir/usr/share/icons/hicolor/256x256/apps/velixinstall.png \
             --plugin qt \
             --output appimage
 
-      - name: Upload AppImage artifact
+      - name: Upload AppImage
         uses: actions/upload-artifact@v4
         with:
           name: VelixInstall-appimage

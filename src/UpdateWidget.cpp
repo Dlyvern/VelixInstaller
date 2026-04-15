@@ -16,57 +16,99 @@
 
 namespace
 {
-// Extract the new binary from the downloaded zip and copy it next to the running binary.
-// Returns the path to the extracted binary, or empty on failure.
-QString extractAndStage(const QString& zipPath)
+// Recursively copy src directory into dest directory (dest is created if needed).
+void copyDir(const QString& src, const QString& dest)
 {
-    // We use miniz via unzip process for simplicity — same pattern as Installer.
-    // Find the binary entry inside the zip (first non-directory file that looks like our executable).
-    const QString appPath = QCoreApplication::applicationFilePath();
-    const QFileInfo appInfo(appPath);
-    const QString binaryName = appInfo.fileName();
-    const QString destPath   = appInfo.dir().filePath(binaryName + ".new");
-
-#ifdef _WIN32
-    // On Windows, use PowerShell to extract.
-    QStringList args;
-    args << "-Command"
-         << QString("Expand-Archive -Force '%1' '%2'; "
-                    "Copy-Item -Force (Get-ChildItem '%2' -Recurse -File | "
-                    "Where-Object {$_.Name -eq '%3'} | Select-Object -First 1 -ExpandProperty FullName) '%4'")
-                .arg(zipPath, QDir::tempPath() + "/VelixInstaller_extract", binaryName, destPath);
-    QProcess ps;
-    ps.start("powershell.exe", args);
-    ps.waitForFinished(30000);
-#else
-    // On Linux/macOS, use unzip.
-    const QString extractDir = QDir::tempPath() + "/VelixInstaller_extract";
-    QDir().mkpath(extractDir);
+    QDir().mkpath(dest);
+    QDirIterator it(src, QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot,
+                    QDirIterator::Subdirectories);
+    while (it.hasNext())
     {
-        QProcess unzip;
-        unzip.start("unzip", {"-o", zipPath, "-d", extractDir});
-        unzip.waitForFinished(30000);
-    }
-    // Find the binary file in the extracted tree.
-    QDir exDir(extractDir);
-    const QFileInfoList all = exDir.entryInfoList(QDir::Files | QDir::Executable, QDir::NoSort);
-    if (!all.isEmpty())
-    {
-        QFile::remove(destPath);
-        QFile::copy(all.first().absoluteFilePath(), destPath);
-    }
-    else
-    {
-        // Fallback: search recursively by binary name.
-        QDirIterator it(extractDir, {binaryName}, QDir::Files,
-                        QDirIterator::Subdirectories);
-        if (it.hasNext())
+        it.next();
+        const QString rel  = it.filePath().mid(src.length() + 1);
+        const QString target = dest + "/" + rel;
+        if (it.fileInfo().isDir())
+            QDir().mkpath(target);
+        else
         {
-            QFile::remove(destPath);
-            QFile::copy(it.next(), destPath);
+            QFile::remove(target);
+            QFile::copy(it.filePath(), target);
         }
     }
+}
+
+// Extract the zip, stage the new binary next to the running one, and copy resources/.
+// Returns the staged binary path, or empty on failure.
+QString extractAndStage(const QString& zipPath)
+{
+    const QString appPath   = QCoreApplication::applicationFilePath();
+    const QFileInfo appInfo(appPath);
+    const QString binaryName = appInfo.fileName();
+    const QString installDir = appInfo.dir().absolutePath();
+    const QString destPath   = appInfo.dir().filePath(binaryName + ".new");
+    const QString extractDir = QDir::tempPath() + "/VelixInstaller_extract";
+
+    // Clean previous extraction.
+    QDir(extractDir).removeRecursively();
+    QDir().mkpath(extractDir);
+
+#ifdef _WIN32
+    QProcess ps;
+    ps.start("powershell.exe", {
+        "-Command",
+        QString("Expand-Archive -Force '%1' '%2'").arg(zipPath, extractDir)
+    });
+    ps.waitForFinished(30000);
+#else
+    QProcess unzip;
+    unzip.start("unzip", {"-o", zipPath, "-d", extractDir});
+    unzip.waitForFinished(30000);
 #endif
+
+    // ── Find and stage the binary ─────────────────────────────────────────
+    QString foundBinary;
+
+    // First: look for a file named exactly like our binary.
+    QDirIterator nameIt(extractDir, {binaryName}, QDir::Files,
+                        QDirIterator::Subdirectories);
+    if (nameIt.hasNext())
+        foundBinary = nameIt.next();
+
+    // Fallback (Linux/macOS): first executable file in the tree.
+    if (foundBinary.isEmpty())
+    {
+        QDirIterator exeIt(extractDir, QDir::Files, QDirIterator::Subdirectories);
+        while (exeIt.hasNext())
+        {
+            exeIt.next();
+            if (exeIt.fileInfo().isExecutable())
+            {
+                foundBinary = exeIt.filePath();
+                break;
+            }
+        }
+    }
+
+    if (foundBinary.isEmpty())
+        return {};
+
+    QFile::remove(destPath);
+    if (!QFile::copy(foundBinary, destPath))
+        return {};
+
+    // ── Copy resources/ folder if present in the zip ──────────────────────
+    // Look for a resources/ dir anywhere in the extraction tree.
+    QDirIterator resIt(extractDir, QDir::Dirs | QDir::NoDotAndDotDot,
+                       QDirIterator::Subdirectories);
+    while (resIt.hasNext())
+    {
+        resIt.next();
+        if (resIt.fileName() == "resources")
+        {
+            copyDir(resIt.filePath(), installDir + "/resources");
+            break;
+        }
+    }
 
     return QFileInfo::exists(destPath) ? destPath : QString{};
 }
