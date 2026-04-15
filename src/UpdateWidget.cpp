@@ -12,6 +12,8 @@
 #include <QTextStream>
 #include <QDebug>
 
+#include "miniz/miniz.h"
+
 namespace
 {
 void copyDir(const QString& src, const QString& dest)
@@ -46,18 +48,73 @@ QString extractAndStage(const QString& zipPath)
     QDir(extractDir).removeRecursively();
     QDir().mkpath(extractDir);
 
-#ifdef _WIN32
-    QProcess ps;
-    ps.start("powershell.exe", {
-        "-Command",
-        QString("Expand-Archive -Force '%1' '%2'").arg(zipPath, extractDir)
-    });
-    ps.waitForFinished(30000);
-#else
-    QProcess unzip;
-    unzip.start("unzip", {"-o", zipPath, "-d", extractDir});
-    unzip.waitForFinished(30000);
-#endif
+    qDebug() << "[UpdateExtract] zip:" << zipPath << "exists:" << QFileInfo::exists(zipPath)
+             << "size:" << QFileInfo(zipPath).size();
+
+    // Extract one zip layer into destDir. Returns false on error.
+    auto extractZip = [](const QString& src, const QString& destDir) -> bool
+    {
+        mz_zip_archive zip{};
+        if (!mz_zip_reader_init_file(&zip, src.toLocal8Bit().constData(), 0))
+        {
+            qWarning() << "[UpdateExtract] mz_zip_reader_init_file failed, error:" << static_cast<int>(zip.m_last_error);
+            return false;
+        }
+
+        const mz_uint numFiles = mz_zip_reader_get_num_files(&zip);
+        qDebug() << "[UpdateExtract] entries:" << numFiles << "-> dest:" << destDir;
+
+        for (mz_uint i = 0; i < numFiles; ++i)
+        {
+            mz_zip_archive_file_stat stat{};
+            if (!mz_zip_reader_file_stat(&zip, i, &stat))
+            {
+                qWarning() << "[UpdateExtract] file_stat failed at entry" << i << "error:" << static_cast<int>(zip.m_last_error);
+                mz_zip_reader_end(&zip);
+                return false;
+            }
+
+            const QString entryName = QString::fromUtf8(stat.m_filename);
+            const QString entryDest = destDir + "/" + entryName;
+
+            if (mz_zip_reader_is_file_a_directory(&zip, i))
+            {
+                QDir().mkpath(entryDest);
+                continue;
+            }
+
+            QDir().mkpath(QFileInfo(entryDest).absolutePath());
+            qDebug() << "[UpdateExtract] extracting:" << entryName;
+
+            if (!mz_zip_reader_extract_to_file(&zip, i, entryDest.toLocal8Bit().constData(), 0))
+            {
+                qWarning() << "[UpdateExtract] extract_to_file failed:" << entryName << "error:" << static_cast<int>(zip.m_last_error);
+                mz_zip_reader_end(&zip);
+                return false;
+            }
+        }
+
+        mz_zip_reader_end(&zip);
+        return true;
+    };
+
+    if (!extractZip(zipPath, extractDir))
+        return {};
+
+    // If the archive contained a single nested zip, extract that too
+    {
+        QDirIterator it(extractDir, {"*.zip"}, QDir::Files, QDirIterator::Subdirectories);
+        if (it.hasNext())
+        {
+            const QString innerZip   = it.next();
+            const QString innerDir   = extractDir + "/inner";
+            QDir().mkpath(innerDir);
+            qDebug() << "[UpdateExtract] found nested zip:" << innerZip << "-> extracting into" << innerDir;
+            if (!extractZip(innerZip, innerDir))
+                return {};
+            QFile::remove(innerZip);
+        }
+    }
 
     QString foundBinary;
     QDirIterator nameIt(extractDir, {binaryName}, QDir::Files,
@@ -171,7 +228,9 @@ UpdateWidget::UpdateWidget(AppUpdateChecker* checker, QWidget* parent)
             m_activeChannel->downloadFile->deleteLater();
             m_activeChannel->downloadFile = nullptr;
         }
-        m_activeChannel->speedLabel->setText("Download complete. Preparing update\u2026");
+        m_activeChannel->speedLabel->setText("Installing update\u2026");
+        if (m_downloadDialog)
+            m_downloadDialog->onFinished();
         applyUpdate();
     });
 
@@ -186,9 +245,15 @@ UpdateWidget::UpdateWidget(AppUpdateChecker* checker, QWidget* parent)
         }
         m_activeChannel->progressBar->hide();
         m_activeChannel->speedLabel->hide();
+        m_activeChannel->showProgressBtn->hide();
         m_activeChannel->downloadBtn->setEnabled(true);
         m_activeChannel->skipBtn->setEnabled(true);
         m_activeChannel = nullptr;
+        if (m_downloadDialog)
+        {
+            m_downloadDialog->onError(error);
+            m_downloadDialog = nullptr;
+        }
         ToastNotification::show("Download failed: " + error, ToastType::Error, this);
     });
 }
@@ -283,6 +348,11 @@ QWidget* UpdateWidget::buildChannelPage(Channel& ch, const QString& label)
         ch.speedLabel->setTextColor(QColor(150, 150, 150));
         ch.speedLabel->hide();
         panelLayout->addWidget(ch.speedLabel);
+
+        ch.showProgressBtn = new FireButton("Show download progress\u2026", FireButton::Variant::Secondary, ch.updatePanel);
+        ch.showProgressBtn->setFixedHeight(30);
+        ch.showProgressBtn->hide();
+        panelLayout->addWidget(ch.showProgressBtn);
     }
     pageLayout->addWidget(ch.updatePanel);
     pageLayout->addStretch(1);
@@ -340,7 +410,6 @@ void UpdateWidget::onCheckFailed()
     m_unstable.statusLabel->setText(msg);
 }
 
-// ── Download ──────────────────────────────────────────────────────────────────
 void UpdateWidget::startDownload(Channel& ch)
 {
     if (ch.downloadUrl.isEmpty() || m_activeChannel)
@@ -370,10 +439,32 @@ void UpdateWidget::startDownload(Channel& ch)
         return;
     }
 
+    // ── Create download dialog ────────────────────────────────────────────
+    m_downloadDialog = new UpdateDownloadDialog(ch.version, ch.changelogEdit->toPlainText(),
+                                                window());
+    m_downloadDialog->show();
+
+    // Mirror progress into both the dialog and the in-tab bar
+    connect(m_checker, &AppUpdateChecker::downloadProgressChanged,
+            m_downloadDialog, &UpdateDownloadDialog::onProgress);
+    connect(m_checker, &AppUpdateChecker::downloadSpeedChanged,
+            m_downloadDialog, &UpdateDownloadDialog::onSpeed);
+
+    // "Show progress" button reopens the dialog if minimized
+    ch.showProgressBtn->show();
+    connect(ch.showProgressBtn, &QPushButton::clicked, this, [this]
+    {
+        if (m_downloadDialog)
+        {
+            m_downloadDialog->show();
+            m_downloadDialog->raise();
+            m_downloadDialog->activateWindow();
+        }
+    });
+
     m_checker->download(QUrl(ch.downloadUrl));
 }
 
-// ── Skip ──────────────────────────────────────────────────────────────────────
 void UpdateWidget::skipVersion(Channel& ch)
 {
     if (ch.version.isEmpty())
@@ -391,7 +482,6 @@ void UpdateWidget::skipVersion(Channel& ch)
     ToastNotification::show(QString("Update %1 skipped.").arg(ch.version), ToastType::Info, this);
 }
 
-// ── Apply update ──────────────────────────────────────────────────────────────
 void UpdateWidget::applyUpdate()
 {
     const QString zipPath    = QDir::tempPath() + "/VelixInstaller_update.zip";
@@ -399,13 +489,19 @@ void UpdateWidget::applyUpdate()
 
     if (stagedPath.isEmpty())
     {
-        ToastNotification::show("Failed to extract update archive.", ToastType::Error, this);
+        const QString zipPath = QDir::tempPath() + "/VelixInstaller_update.zip";
+        const bool zipExists  = QFileInfo::exists(zipPath);
+        const QString detail  = zipExists
+            ? "Extraction failed — check terminal output for details."
+            : "Downloaded file is missing from temp directory.";
+
+        ToastNotification::show("Update failed: " + detail, ToastType::Error, this);
         if (m_activeChannel)
         {
+            m_activeChannel->speedLabel->setText(detail);
             m_activeChannel->downloadBtn->setEnabled(true);
             m_activeChannel->skipBtn->setEnabled(true);
             m_activeChannel->progressBar->hide();
-            m_activeChannel->speedLabel->hide();
         }
         m_activeChannel = nullptr;
         return;

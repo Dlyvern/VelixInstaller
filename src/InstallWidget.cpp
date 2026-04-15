@@ -10,8 +10,9 @@
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QInputDialog>
-#include <QProcess>
 #include <QDebug>
+
+#include "miniz/miniz.h"
 
 namespace
 {
@@ -169,47 +170,65 @@ bool InstallWidget::extractArchive(const QString& archivePath, const QString& de
 {
     if (!QFileInfo::exists(archivePath))
     {
+
         errorMessage = QString("Archive not found: %1").arg(archivePath);
         return false;
     }
 
     QDir().mkpath(destinationDir);
 
-#ifdef _WIN32
-    QProcess extractProcess;
-    QStringList args;
-    args << "-NoProfile"
-         << "-ExecutionPolicy" << "Bypass"
-         << "-Command"
-         << QString("Expand-Archive -LiteralPath \"%1\" -DestinationPath \"%2\" -Force")
-                .arg(archivePath, destinationDir);
-
-    extractProcess.start("powershell", args);
-    if (!extractProcess.waitForFinished(-1) || extractProcess.exitCode() != 0)
+    mz_zip_archive zip{};
+    if (!mz_zip_reader_init_file(&zip, archivePath.toLocal8Bit().constData(), 0))
     {
-        errorMessage = QString::fromLocal8Bit(extractProcess.readAllStandardError()).trimmed();
-        if (errorMessage.isEmpty())
-            errorMessage = "PowerShell Expand-Archive failed";
+        errorMessage = QString("Failed to open zip archive: %1 (miniz error %2)")
+            .arg(archivePath)
+            .arg(static_cast<int>(zip.m_last_error));
+        qWarning() << "[Extract]" << errorMessage;
         return false;
     }
 
+    const mz_uint numFiles = mz_zip_reader_get_num_files(&zip);
+    qDebug() << "[Extract] Opened archive:" << archivePath << "entries:" << numFiles << "-> dest:" << destinationDir;
+
+    for (mz_uint i = 0; i < numFiles; ++i)
+    {
+        mz_zip_archive_file_stat stat{};
+        if (!mz_zip_reader_file_stat(&zip, i, &stat))
+        {
+            mz_zip_reader_end(&zip);
+            errorMessage = QString("Failed to read zip entry %1 (miniz error %2)")
+                .arg(i).arg(static_cast<int>(zip.m_last_error));
+            qWarning() << "[Extract]" << errorMessage;
+            return false;
+        }
+
+        const QString entryName = QString::fromUtf8(stat.m_filename);
+        const QString destPath  = destinationDir + "/" + entryName;
+
+        if (mz_zip_reader_is_file_a_directory(&zip, i))
+        {
+            QDir().mkpath(destPath);
+            continue;
+        }
+
+        QDir().mkpath(QFileInfo(destPath).absolutePath());
+
+        qDebug() << "[Extract] Extracting:" << entryName << "->" << destPath;
+
+        if (!mz_zip_reader_extract_to_file(&zip, i, destPath.toLocal8Bit().constData(), 0))
+        {
+            mz_zip_reader_end(&zip);
+            errorMessage = QString("Failed to extract '%1' (miniz error %2)")
+                .arg(entryName)
+                .arg(static_cast<int>(zip.m_last_error));
+            qWarning() << "[Extract]" << errorMessage;
+            return false;
+        }
+    }
+
+    mz_zip_reader_end(&zip);
+    qDebug() << "[Extract] Done.";
     return true;
-#else
-    QProcess unzipProcess;
-    unzipProcess.start("unzip", {"-o", archivePath, "-d", destinationDir});
-    if (unzipProcess.waitForFinished(-1) && unzipProcess.exitCode() == 0)
-        return true;
-
-    QProcess tarProcess;
-    tarProcess.start("tar", {"-xf", archivePath, "-C", destinationDir});
-    if (tarProcess.waitForFinished(-1) && tarProcess.exitCode() == 0)
-        return true;
-
-    QString unzipError = QString::fromLocal8Bit(unzipProcess.readAllStandardError()).trimmed();
-    QString tarError = QString::fromLocal8Bit(tarProcess.readAllStandardError()).trimmed();
-    errorMessage = QString("unzip failed (%1); tar failed (%2)").arg(unzipError, tarError);
-    return false;
-#endif
 }
 
 void InstallWidget::applyCurrentVersionToWidgets()

@@ -11,6 +11,7 @@
 #include <QPalette>
 
 #include "AppUpdateChecker.hpp"
+#include "UpdateDownloadDialog.hpp"
 #include "widgets/VelixText.hpp"
 #include "widgets/VelixProgressBar.hpp"
 #include "FireButton.hpp"
@@ -50,6 +51,7 @@ private:
         QWidget*          updatePanel{nullptr};
         QWidget*          upToDatePanel{nullptr};
         QFile*            downloadFile{nullptr};
+        FireButton*       showProgressBtn{nullptr};
     };
 
     QWidget* buildChannelPage(Channel& ch, const QString& label);
@@ -57,9 +59,10 @@ private:
     void     skipVersion(Channel& ch);
     void     applyUpdate();
 
-    AppUpdateChecker* m_checker{nullptr};
-    QTabWidget*       m_tabWidget{nullptr};
-    Channel*          m_activeChannel{nullptr};
+    AppUpdateChecker*     m_checker{nullptr};
+    QTabWidget*           m_tabWidget{nullptr};
+    Channel*              m_activeChannel{nullptr};
+    UpdateDownloadDialog* m_downloadDialog{nullptr};
 
     Channel m_stable;
     Channel m_unstable;

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.15)
-project(VelixInstall LANGUAGES CXX)
+project(VelixInstall LANGUAGES CXX C)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -23,6 +23,7 @@ find_package(Qt6 COMPONENTS Widgets Network REQUIRED)
 add_executable(${PROJECT_NAME}
         ${PROJECT_SOURCES}
         ${PROJECT_HEADERS}
+        ${LIBRARIES_DIR}/miniz/miniz.c
 )
 
 target_include_directories(${PROJECT_NAME} PRIVATE
