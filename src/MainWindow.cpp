@@ -35,6 +35,12 @@ MainWindow::MainWindow(QWidget* widget) : QMainWindow(widget)
 
     connect(m_leftWidget, &LeftWidget::tabWidgetChanged, m_mainWidget, &MainWidget::changeWidget);
 
+    connect(m_mainWidget, &MainWidget::updateAvailable, this, [this]
+    {
+        m_leftWidget->setUpdateBadge(true);
+        ToastNotification::show("New VelixInstaller update available!", ToastType::Info, this);
+    });
+
     setMinimumSize(900, 620);
 
     Config splashCfg;

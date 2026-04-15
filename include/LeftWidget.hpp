@@ -14,11 +14,15 @@ public:
 
     ~LeftWidget() override = default;
 
+public slots:
+    void setUpdateBadge(bool hasBadge);
+
 protected:
     void paintEvent(QPaintEvent* event) override;
 
 private:
     QVector<TabWidget*> m_tabs;
+    TabWidget*          m_updatesTab{nullptr};
 
     void addTab(const QString& tabName, const QString& iconPath, QWidget* parent = nullptr);
 

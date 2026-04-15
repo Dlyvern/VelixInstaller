@@ -38,12 +38,25 @@ MainWidget::MainWidget(QWidget* widget) : QWidget(widget)
     m_settingsWidget = new SettingsWidget(m_stackedWidget);
     m_documentationWidget = new DocumentationWidget(m_stackedWidget);
 
+    m_updateChecker = new AppUpdateChecker(this);
+    m_updateWidget  = new UpdateWidget(m_updateChecker, m_stackedWidget);
+
     connect(m_installWidget, &InstallWidget::installedVersionsChanged, m_settingsWidget, &SettingsWidget::reloadInstalledVersions);
+
+    connect(m_updateChecker, &AppUpdateChecker::updateAvailable,
+            m_updateWidget,  &UpdateWidget::onUpdateAvailable);
+    connect(m_updateChecker, &AppUpdateChecker::noUpdateAvailable,
+            m_updateWidget,  &UpdateWidget::onNoUpdate);
+    connect(m_updateChecker, &AppUpdateChecker::checkFailed,
+            m_updateWidget,  &UpdateWidget::onCheckFailed);
+    connect(m_updateChecker, &AppUpdateChecker::updateAvailable,
+            this, [this](const QString&, const QString&, const QString&){ emit updateAvailable(); });
 
     m_stackedWidget->addWidget(m_installWidget);
     m_stackedWidget->addWidget(m_projectWidget);
     m_stackedWidget->addWidget(m_settingsWidget);
     m_stackedWidget->addWidget(m_documentationWidget);
+    m_stackedWidget->addWidget(m_updateWidget);
 
     m_stackedWidget->setCurrentWidget(m_projectWidget);
 
@@ -55,10 +68,11 @@ void MainWidget::changeWidget(const QString& widgetName)
     //TODO Refactor this
     const static QMap<QString, QWidget*> widgets
     {
-        {"Projects", m_projectWidget},
-        {"Installs", m_installWidget},
-        {"Settings", m_settingsWidget},
-        {"Documentation", m_documentationWidget}
+        {"Projects",      m_projectWidget},
+        {"Installs",      m_installWidget},
+        {"Settings",      m_settingsWidget},
+        {"Documentation", m_documentationWidget},
+        {"Updates",       m_updateWidget}
     };
 
     auto it = widgets.find(widgetName);

@@ -18,10 +18,18 @@ LeftWidget::LeftWidget(QWidget* parent) : QWidget(parent)
     addTab("Documentation", "./resources/document.png",  this);
     addTab("Settings",      "./resources/setting.png",   this);
     addTab("Installs",      "./resources/installs.png",  this);
+    addTab("Updates",       "./resources/download.png",  this);
 
+    m_updatesTab = m_tabs.last();
     m_tabs.first()->setActive(true);
 
     m_mainLayout->addStretch(10);
+}
+
+void LeftWidget::setUpdateBadge(bool hasBadge)
+{
+    if (m_updatesTab)
+        m_updatesTab->setHasBadge(hasBadge);
 }
 
 void LeftWidget::paintEvent(QPaintEvent* event)

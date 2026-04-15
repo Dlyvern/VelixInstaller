@@ -7,6 +7,7 @@
 #include "MainWidget.hpp"
 #include "LeftWidget.hpp"
 #include "SplashOverlay.hpp"
+#include "ToastNotification.hpp"
 #include <QPainter>
 #include <QLinearGradient>
 

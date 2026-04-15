@@ -18,6 +18,7 @@ public:
     ~TabWidget() override = default;
 
     void setActive(bool isActive);
+    void setHasBadge(bool hasBadge);
 
 protected:
     void paintEvent(QPaintEvent *) override;
@@ -34,6 +35,7 @@ private:
     QLabel* m_labelIcon{nullptr};
     VelixText* m_textLabel{nullptr};
     QPixmap m_originalPixMap;
+    bool    m_hasBadge{false};
 
     void updateIconColor();
 

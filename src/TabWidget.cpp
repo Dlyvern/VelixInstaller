@@ -38,8 +38,13 @@ TabWidget::TabWidget(const QString& tabName, const QString& iconPath, QWidget* p
 void TabWidget::setActive(bool isActive)
 {
     m_isActive = isActive;
-
     updateIconColor();
+    update();
+}
+
+void TabWidget::setHasBadge(bool hasBadge)
+{
+    m_hasBadge = hasBadge;
     update();
 }
 
@@ -150,4 +155,11 @@ void TabWidget::paintEvent(QPaintEvent *)
     painter.setOpacity(1.0);
     painter.setPen(QPen(borderColor, 1));
     painter.drawPath(path);
+
+    if (m_hasBadge)
+    {
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(QColor(255, 80, 0));
+        painter.drawEllipse(width() - 14, 6, 8, 8);
+    }
 }
