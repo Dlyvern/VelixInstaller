@@ -2,19 +2,26 @@
 #include <QHBoxLayout>
 #include <QPainter>
 #include <QPainterPath>
-#include <QRandomGenerator>
 #include <QDebug>
+
+#include "Theme.hpp"
 
 TabWidget::TabWidget(const QString& tabName, const QString& iconPath, QWidget* parent) : QWidget(parent)
 {
     auto mainLayout = new QHBoxLayout(this);
-    mainLayout->setContentsMargins(12, 6, 12, 6);
-    mainLayout->setSpacing(9);
+    mainLayout->setContentsMargins(14, 6, 12, 6);
+    mainLayout->setSpacing(10);
 
-    m_originalPixMap.load(iconPath);
-
-    if(m_originalPixMap.isNull()) 
-        qWarning() << "Failed to load texture image!";
+    if (iconPath == QStringLiteral(":home"))
+    {
+        m_iconKind = IconKind::Home;
+    }
+    else
+    {
+        m_originalPixMap.load(iconPath);
+        if (m_originalPixMap.isNull())
+            qWarning() << "Failed to load texture image!" << iconPath;
+    }
 
     m_labelIcon = new QLabel(this);
     m_labelIcon->setFixedSize(18, 18);
@@ -23,12 +30,13 @@ TabWidget::TabWidget(const QString& tabName, const QString& iconPath, QWidget* p
 
     m_textLabel = new VelixText(tabName, this);
     m_textLabel->setPointSize(10);
+    m_textLabel->setBold(false);
     m_textLabel->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Preferred);
     mainLayout->addWidget(m_textLabel, 0, Qt::AlignLeft);
 
     mainLayout->addStretch(1);
 
-    setMinimumHeight(44);
+    setMinimumHeight(36);
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     setCursor(Qt::PointingHandCursor);
 
@@ -48,28 +56,64 @@ void TabWidget::setHasBadge(bool hasBadge)
     update();
 }
 
+namespace
+{
+QPixmap renderHomeIcon(const QColor& tint, int size)
+{
+    QPixmap px(size, size);
+    px.fill(Qt::transparent);
+    QPainter p(&px);
+    p.setRenderHint(QPainter::Antialiasing);
+    QPen pen(tint, 1.6);
+    pen.setCapStyle(Qt::RoundCap);
+    pen.setJoinStyle(Qt::RoundJoin);
+    p.setPen(pen);
+    const qreal s = size / 20.0;
+    QPainterPath roof;
+    roof.moveTo(3 * s, 10 * s);
+    roof.lineTo(10 * s, 4 * s);
+    roof.lineTo(17 * s, 10 * s);
+    p.drawPath(roof);
+    QPainterPath body;
+    body.moveTo(5 * s, 9 * s);
+    body.lineTo(5 * s, 16 * s);
+    body.lineTo(15 * s, 16 * s);
+    body.lineTo(15 * s, 9 * s);
+    p.drawPath(body);
+    return px;
+}
+}
+
 void TabWidget::updateIconColor()
 {
+    QColor tint = theme::text3;
+    QColor textColor = theme::text2;
+
+    if (m_isActive)
+    {
+        tint = theme::accentBright;
+        textColor = theme::accentBright;
+    }
+    else if (m_isHovered)
+    {
+        tint = theme::text2;
+        textColor = theme::text;
+    }
+
+    m_textLabel->setTextColor(textColor);
+
+    if (m_iconKind == IconKind::Home)
+    {
+        m_labelIcon->setPixmap(renderHomeIcon(tint, 16));
+        return;
+    }
+
     if (m_originalPixMap.isNull())
         return;
 
     QPixmap basePixmap = m_originalPixMap.scaled(16, 16, Qt::KeepAspectRatio, Qt::SmoothTransformation);
     QPixmap colorized(basePixmap.size());
     colorized.fill(Qt::transparent);
-
-    QColor tint = QColor(165, 165, 165);
-    QColor textColor = QColor(190, 190, 190);
-
-    if (m_isActive)
-    {
-        tint = QColor(255, 196, 124);
-        textColor = QColor(244, 244, 244);
-    }
-    else if (m_isHovered)
-    {
-        tint = QColor(210, 210, 210);
-        textColor = QColor(220, 220, 220);
-    }
 
     QPainter iconPainter(&colorized);
     iconPainter.drawPixmap(0, 0, basePixmap);
@@ -78,7 +122,6 @@ void TabWidget::updateIconColor()
     iconPainter.end();
 
     m_labelIcon->setPixmap(colorized);
-    m_textLabel->setTextColor(textColor);
 }
 
 void TabWidget::mousePressEvent(QMouseEvent* event)
@@ -110,56 +153,36 @@ void TabWidget::paintEvent(QPaintEvent *)
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing);
 
-    QRectF rect = this->rect().adjusted(1, 1, -1, -1);
+    const QRectF bounds = rect().adjusted(0, 0, -1, -1);
     QPainterPath path;
-    path.addRoundedRect(rect, m_cornerRadius, m_cornerRadius);
+    path.addRoundedRect(bounds, m_cornerRadius, m_cornerRadius);
 
-    QColor borderColor(52, 52, 52);
     if (m_isActive)
     {
-        QLinearGradient grad(0, 0, 0, height());
-        grad.setColorAt(0.0, QColor(255, 100, 0, 220));
-        grad.setColorAt(0.6, QColor(220, 68, 0, 185));
-        grad.setColorAt(1.0, QColor(130, 35, 0, 160));
-        
-        painter.fillPath(path, grad);
-        borderColor = QColor(255, 140, 0, 120);
-
-        painter.setClipPath(path);
-        painter.setOpacity(0.12);
-        for (int i = 0; i < width(); i += 3) {
-            for (int j = 0; j < height(); j += 3) {
-                int alpha = QRandomGenerator::global()->bounded(30, 80);
-                painter.setPen(QColor(255, 200, 100, alpha));
-                painter.drawPoint(i, j);
-            }
-        }
+        painter.fillPath(path, theme::withAlpha(theme::accent, 31));   // ~12% alpha
     }
     else if (m_isHovered)
     {
-        QLinearGradient grad(0, 0, 0, height());
-        grad.setColorAt(0.0, QColor(68, 68, 68, 220));
-        grad.setColorAt(1.0, QColor(52, 52, 52, 220));
-        painter.fillPath(path, grad);
-        borderColor = QColor(88, 88, 88);
+        painter.fillPath(path, theme::surface1);
     }
-    else
-    {
-        QLinearGradient grad(0, 0, 0, height());
-        grad.setColorAt(0.0, QColor(52, 52, 52, 170));
-        grad.setColorAt(1.0, QColor(40, 40, 40, 170));
-        painter.fillPath(path, grad);
-    }
+    // else: transparent — let sidebar background show through
 
-    painter.setClipping(false);
-    painter.setOpacity(1.0);
-    painter.setPen(QPen(borderColor, 1));
-    painter.drawPath(path);
+    if (m_isActive)
+    {
+        // 3px left accent bar
+        QPainterPath bar;
+        const QRectF barRect(bounds.left(), bounds.top() + 6, 3, bounds.height() - 12);
+        bar.addRoundedRect(barRect, 1.5, 1.5);
+        QLinearGradient grad(barRect.topLeft(), barRect.bottomLeft());
+        grad.setColorAt(0.0, theme::accent);
+        grad.setColorAt(1.0, theme::accentDeep);
+        painter.fillPath(bar, grad);
+    }
 
     if (m_hasBadge)
     {
         painter.setPen(Qt::NoPen);
-        painter.setBrush(QColor(255, 80, 0));
-        painter.drawEllipse(width() - 14, 6, 8, 8);
+        painter.setBrush(theme::accent);
+        painter.drawEllipse(width() - 14, height() / 2 - 3, 6, 6);
     }
 }

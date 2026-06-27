@@ -12,6 +12,7 @@
 #include "UpdateWidget.hpp"
 #include "AppUpdateChecker.hpp"
 #include "SamplesWidget.hpp"
+#include "HomeWidget.hpp"
 
 class MainWidget : public QWidget
 {
@@ -32,6 +33,7 @@ private:
     void onDownloadProgress(int percent);
     void onDownloadEnded();
 
+    HomeWidget*          m_homeWidget{nullptr};
     ProjectsWidget*      m_projectWidget{nullptr};
     InstallWidget*       m_installWidget{nullptr};
     SettingsWidget*      m_settingsWidget{nullptr};

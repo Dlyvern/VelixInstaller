@@ -17,6 +17,8 @@ public:
 
     ~TabWidget() override = default;
 
+    enum class IconKind { File, Home };
+
     void setActive(bool isActive);
     void setHasBadge(bool hasBadge);
 
@@ -34,8 +36,9 @@ protected:
 private:
     QLabel* m_labelIcon{nullptr};
     VelixText* m_textLabel{nullptr};
-    QPixmap m_originalPixMap;
-    bool    m_hasBadge{false};
+    QPixmap   m_originalPixMap;
+    IconKind  m_iconKind{IconKind::File};
+    bool      m_hasBadge{false};
 
     void updateIconColor();
 

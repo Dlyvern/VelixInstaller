@@ -1,5 +1,7 @@
 #include "FireButton.hpp"
 
+#include "Theme.hpp"
+
 namespace
 {
 QColor blendColor(const QColor& base, int delta)
@@ -15,10 +17,10 @@ FireButton::FireButton(const QString& text, QWidget* parent)  : FireButton(text,
 FireButton::FireButton(const QString& text, Variant variant, QWidget* parent) : QPushButton(text, parent), m_variant(variant)
 {
     setCursor(Qt::PointingHandCursor);
-    setMinimumHeight(34);
+    setMinimumHeight(32);
 
     QFont currentFont = font();
-    currentFont.setBold(true);
+    currentFont.setWeight(QFont::DemiBold);
     setFont(currentFont);
 }
 
@@ -35,68 +37,75 @@ void FireButton::paintEvent(QPaintEvent*)
 {
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing);
-    
+
     QPainterPath path;
-    const QRectF bounds = rect().adjusted(1, 1, -1, -1);
+    const QRectF bounds = rect().adjusted(0.5, 0.5, -0.5, -0.5);
     path.addRoundedRect(bounds, m_cornerRadius, m_cornerRadius);
 
     QColor topColor;
     QColor bottomColor;
     QColor borderColor;
+    QColor textColor;
 
     if (m_variant == Variant::Primary)
     {
-        topColor = QColor(255, 80, 0);
-        bottomColor = QColor(220, 40, 0);
-        borderColor = QColor(255, 140, 0);
+        topColor    = theme::accentSoft;
+        bottomColor = theme::accentDeep;
+        borderColor = theme::withAlpha(theme::accent, 153);  // ~60%
+        textColor   = QColor(0xFF, 0xFF, 0xFF);
     }
     else
     {
-        topColor = QColor(72, 72, 72);
-        bottomColor = QColor(46, 46, 46);
-        borderColor = QColor(104, 104, 104);
+        topColor    = theme::surface2;
+        bottomColor = theme::surface1;
+        borderColor = theme::border;
+        textColor   = theme::text;
     }
 
     if (!isEnabled())
     {
-        topColor = QColor(54, 54, 54);
-        bottomColor = QColor(44, 44, 44);
-        borderColor = QColor(70, 70, 70);
+        topColor.setAlpha(110);
+        bottomColor.setAlpha(110);
+        borderColor.setAlpha(120);
+        textColor = theme::text3;
     }
     else if (m_isPressed)
     {
-        topColor = blendColor(topColor, -20);
-        bottomColor = blendColor(bottomColor, -20);
+        topColor    = blendColor(topColor, -10);
+        bottomColor = blendColor(bottomColor, -10);
     }
     else if (m_isHovered)
     {
-        topColor = blendColor(topColor, 15);
-        bottomColor = blendColor(bottomColor, 10);
+        if (m_variant == Variant::Primary)
+        {
+            topColor    = theme::accent;
+            bottomColor = theme::accentDeep;
+            borderColor = theme::withAlpha(theme::accent, 200);
+        }
+        else
+        {
+            topColor    = theme::surface2Hover;
+            bottomColor = theme::surface1Hover;
+            borderColor = theme::borderHover;
+        }
     }
 
     QLinearGradient grad(0, 0, 0, height());
     grad.setColorAt(0, topColor);
     grad.setColorAt(1, bottomColor);
     painter.fillPath(path, grad);
-    
-    painter.save();
-    painter.setClipPath(path);
-    painter.setOpacity(m_variant == Variant::Primary ? 0.12 : 0.05);
-
-    const QColor noiseColor = m_variant == Variant::Primary ? QColor(255, 200, 100) : QColor(155, 155, 155);
-    for (int i = 0; i < width(); i += 3)
-        for (int j = 0; j < height(); j += 3)
-        {
-            int alpha = QRandomGenerator::global()->bounded(30, 80);
-            painter.setPen(QColor(noiseColor.red(), noiseColor.green(), noiseColor.blue(), alpha));
-            painter.drawPoint(i, j);
-        }
-    painter.restore();
 
     painter.setPen(QPen(borderColor, 1));
     painter.drawPath(path);
 
-    QColor textColor = isEnabled() ? QColor(240, 240, 240) : QColor(140, 140, 140);
+    // Soft inner highlight on primary
+    if (m_variant == Variant::Primary && isEnabled())
+    {
+        painter.setPen(QPen(QColor(255, 255, 255, 22), 1));
+        painter.drawLine(QPointF(bounds.left() + m_cornerRadius, bounds.top() + 1),
+                         QPointF(bounds.right() - m_cornerRadius, bounds.top() + 1));
+    }
+
     painter.setPen(textColor);
     painter.drawText(bounds.toRect(), Qt::AlignCenter, text());
 }

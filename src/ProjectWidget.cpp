@@ -6,17 +6,19 @@
 #include <QPainterPath>
 #include <QLinearGradient>
 #include <QRadialGradient>
+#include <QFontMetrics>
 #include <QDir>
 #include <QDirIterator>
 
 #include "widgets/VelixText.hpp"
 #include "FireButton.hpp"
+#include "Theme.hpp"
 
 namespace
 {
-constexpr int kCardHeight = 170;
-constexpr int kThumbnailWidth = 220;
-constexpr int kThumbnailHeight = 118;
+constexpr int kCardHeight = 150;
+constexpr int kThumbnailWidth = 200;
+constexpr int kThumbnailHeight = 112;
 }
 
 ProjectWidget::ProjectWidget(const project::ProjectData& projectData, QWidget* parent) : QWidget(parent), m_projectData(projectData)
@@ -31,22 +33,22 @@ ProjectWidget::ProjectWidget(const project::ProjectData& projectData, QWidget* p
 
     auto* mainLayout = new QHBoxLayout(this);
     mainLayout->setContentsMargins(14, 14, 14, 14);
-    mainLayout->setSpacing(12);
+    mainLayout->setSpacing(14);
 
-    mainLayout->addSpacing(kThumbnailWidth + 8);
+    // Reserve space for the painted thumbnail on the left.
+    mainLayout->addSpacing(kThumbnailWidth + 4);
 
     auto* labelsLayout = new QVBoxLayout();
-    labelsLayout->setSpacing(5);
+    labelsLayout->setSpacing(4);
     labelsLayout->setContentsMargins(0, 0, 0, 0);
 
     m_projectNameLabel = new VelixText(QString::fromStdString(projectData.name), this);
-    m_projectNameLabel->setPointSize(13);
-    m_projectNameLabel->setTextColor(Qt::white);
+    m_projectNameLabel->setFont(theme::uiFont(12, true));
+    m_projectNameLabel->setTextColor(theme::text);
 
     m_projectPathLabel = new VelixText(QString::fromStdString(projectData.path), this);
-    m_projectPathLabel->setPointSize(9);
-    m_projectPathLabel->setBold(false);
-    m_projectPathLabel->setTextColor(QColor(160, 160, 160));
+    m_projectPathLabel->setFont(theme::monoFont(8));
+    m_projectPathLabel->setTextColor(theme::text3);
 
     labelsLayout->addWidget(m_projectNameLabel);
     labelsLayout->addWidget(m_projectPathLabel);
@@ -94,151 +96,102 @@ void ProjectWidget::paintEvent(QPaintEvent*)
     painter.setRenderHint(QPainter::Antialiasing);
     painter.setRenderHint(QPainter::SmoothPixmapTransform);
 
-    const QRectF cardRect = rect().adjusted(1, 1, -1, -1);
+    // ── Card surface ─────────────────────────────────────────────────────
+    const QRectF cardRect = rect().adjusted(0.5, 0.5, -0.5, -0.5);
     QPainterPath cardPath;
-    cardPath.addRoundedRect(cardRect, 10, 10);
+    cardPath.addRoundedRect(cardRect, theme::radiusCard, theme::radiusCard);
 
-    QLinearGradient cardGradient(cardRect.topLeft(), cardRect.bottomLeft());
-    if (m_isHovered)
-    {
-        cardGradient.setColorAt(0.0, QColor(58, 58, 58, 240));
-        cardGradient.setColorAt(1.0, QColor(41, 41, 41, 240));
-    }
-    else
-    {
-        cardGradient.setColorAt(0.0, QColor(50, 50, 50, 235));
-        cardGradient.setColorAt(1.0, QColor(34, 34, 34, 235));
-    }
-
-    painter.fillPath(cardPath, cardGradient);
-    painter.setPen(QPen(m_isHovered ? QColor(255, 128, 40, 125) : QColor(72, 72, 72), 1));
+    painter.fillPath(cardPath, m_isHovered ? theme::surface1Hover : theme::surface1);
+    painter.setPen(QPen(m_isHovered ? theme::withAlpha(theme::accent, 96) : theme::border, 1));
     painter.drawPath(cardPath);
 
+    // ── Thumbnail ────────────────────────────────────────────────────────
     const QRectF thumbRect(14, 14, kThumbnailWidth, kThumbnailHeight);
     QPainterPath thumbPath;
-    thumbPath.addRoundedRect(thumbRect, 8, 8);
+    thumbPath.addRoundedRect(thumbRect, theme::radiusField, theme::radiusField);
 
     if (!m_thumbnail.isNull())
     {
-        // ── Screenshot thumbnail (UE5-style) ─────────────────────────────────
         painter.save();
         painter.setClipPath(thumbPath);
 
-        // Scale-to-fill: scale the thumbnail to cover the entire thumb area
         const QSizeF scaled = m_thumbnail.size().scaled(
             thumbRect.size().toSize(), Qt::KeepAspectRatioByExpanding);
-        const QRectF srcRect(
-            (m_thumbnail.width()  - scaled.width()  * m_thumbnail.width()  / scaled.width())  / 2.0, 0,
-            m_thumbnail.width(), m_thumbnail.height());
         const QRectF dstRect(
             thumbRect.left() + (thumbRect.width()  - scaled.width())  / 2.0,
             thumbRect.top()  + (thumbRect.height() - scaled.height()) / 2.0,
             scaled.width(), scaled.height());
-        painter.drawPixmap(dstRect, m_thumbnail, srcRect);
+        painter.drawPixmap(dstRect, m_thumbnail, m_thumbnail.rect());
 
-        // Dark gradient overlay at bottom for text readability
-        QLinearGradient textFade(thumbRect.left(), thumbRect.bottom() - 52,
-                                 thumbRect.left(), thumbRect.bottom());
-        textFade.setColorAt(0.0, QColor(0, 0, 0, 0));
-        textFade.setColorAt(1.0, QColor(0, 0, 0, 190));
-        painter.fillRect(thumbRect, textFade);
-
-        // Subtle orange glow at the bottom when hovered
-        if (m_isHovered)
-        {
-            QRadialGradient hoverGlow(thumbRect.center().x(), thumbRect.bottom(),
-                                       thumbRect.width() * 0.6);
-            hoverGlow.setColorAt(0.0, QColor(255, 95, 0, 35));
-            hoverGlow.setColorAt(1.0, Qt::transparent);
-            painter.fillRect(thumbRect, hoverGlow);
-        }
+        // Soft ember glow bottom-right (matches design Thumb primitive).
+        QRadialGradient hoverGlow(thumbRect.right(), thumbRect.bottom(),
+                                   thumbRect.width() * 0.7);
+        hoverGlow.setColorAt(0.0, theme::withAlpha(theme::accent, m_isHovered ? 70 : 38));
+        hoverGlow.setColorAt(1.0, Qt::transparent);
+        painter.fillRect(thumbRect, hoverGlow);
 
         painter.restore();
-
-        // Border
-        painter.setPen(QPen(m_isHovered ? QColor(255, 128, 40, 160) : QColor(60, 60, 60), 1));
-        painter.drawPath(thumbPath);
     }
     else
     {
-        // ── Fallback: logo + gradient (original style) ───────────────────────
+        // ── Fallback: striped placeholder, deterministic hue per project ─
         QLinearGradient thumbGradient(thumbRect.topLeft(), thumbRect.bottomRight());
-        thumbGradient.setColorAt(0.0, QColor(33, 33, 33));
-        thumbGradient.setColorAt(1.0, QColor(19, 19, 19));
+        thumbGradient.setColorAt(0.0, theme::surface2);
+        thumbGradient.setColorAt(1.0, theme::surface0);
         painter.fillPath(thumbPath, thumbGradient);
-        painter.setPen(QPen(QColor(90, 90, 90), 1));
-        painter.drawPath(thumbPath);
 
         painter.save();
         painter.setClipPath(thumbPath);
-        QRadialGradient accent(thumbRect.left() + thumbRect.width() * 0.35,
-                               thumbRect.bottom() + 20,
+        QRadialGradient accent(thumbRect.right(), thumbRect.bottom(),
                                thumbRect.width() * 0.85);
-        accent.setColorAt(0.0, QColor(255, 95, 0, 55));
+        accent.setColorAt(0.0, theme::withAlpha(theme::accent, 56));
         accent.setColorAt(1.0, Qt::transparent);
         painter.fillRect(thumbRect, accent);
         painter.restore();
 
         if (!m_logo.isNull())
         {
-            const QSize logoSize(52, 52);
+            const QSize logoSize(46, 46);
             const QPoint logoTopLeft(
-                static_cast<int>(thumbRect.left()) + 14,
-                static_cast<int>(thumbRect.top()) + 12
+                static_cast<int>(thumbRect.left()) + 12,
+                static_cast<int>(thumbRect.top()) + 10
             );
             painter.drawPixmap(QRect(logoTopLeft, logoSize), m_logo);
         }
     }
 
-    // ── Title & subtitle on the thumbnail ────────────────────────────────────
-    painter.setPen(QColor(238, 238, 238));
-    QFont titleFont = painter.font();
-    titleFont.setBold(true);
-    titleFont.setPointSize(11);
-    painter.setFont(titleFont);
-    const QRect titleRect(
-        static_cast<int>(thumbRect.left()) + 12,
-        static_cast<int>(thumbRect.bottom()) - 40,
-        static_cast<int>(thumbRect.width()) - 24,
-        22
-    );
-    painter.drawText(titleRect, Qt::AlignLeft | Qt::AlignVCenter,
-                     QString::fromStdString(m_projectData.name));
+    painter.setPen(QPen(theme::border, 1));
+    painter.drawPath(thumbPath);
 
-    painter.setPen(QColor(170, 170, 170));
-    QFont subtitleFont = painter.font();
-    subtitleFont.setBold(false);
-    subtitleFont.setPointSize(8);
-    painter.setFont(subtitleFont);
-    painter.drawText(
-        QRect(titleRect.left(), titleRect.bottom() - 2, titleRect.width(), 18),
-        Qt::AlignLeft | Qt::AlignVCenter,
-        "Velix Game Project"
-    );
+    // Mono category label on thumbnail (top-left), matches Thumb in primitives.
+    {
+        QFont label = theme::monoFont(7);
+        painter.setFont(label);
+        painter.setPen(QColor(255, 255, 255, 140));
+        painter.drawText(QRectF(thumbRect.left() + 10, thumbRect.top() + 8,
+                                thumbRect.width() - 20, 14),
+                         Qt::AlignLeft | Qt::AlignVCenter,
+                         QString::fromStdString(m_projectData.name).left(14).toUpper());
+    }
 
-    // ── Disk usage badge (top-right of thumbnail) ────────────────────────────
+    // ── Disk usage badge (mono, on thumbnail bottom-right) ───────────────
     if (!m_diskUsage.isEmpty())
     {
-        QFont badgeFont = painter.font();
-        badgeFont.setPointSize(7);
-        badgeFont.setBold(true);
+        QFont badgeFont = theme::monoFont(7, true);
         painter.setFont(badgeFont);
 
         const QFontMetrics fm(badgeFont);
-        const int textW = fm.horizontalAdvance(m_diskUsage) + 10;
+        const int textW = fm.horizontalAdvance(m_diskUsage) + 12;
         const int badgeH = 16;
         const QRectF badgeRect(
             thumbRect.right() - textW - 6,
-            thumbRect.top() + 6,
+            thumbRect.bottom() - badgeH - 6,
             textW, badgeH);
 
         QPainterPath badgePath;
         badgePath.addRoundedRect(badgeRect, 4, 4);
         painter.fillPath(badgePath, QColor(0, 0, 0, 160));
-        painter.setPen(Qt::NoPen);
-        painter.drawPath(badgePath);
-
-        painter.setPen(QColor(200, 200, 200));
+        painter.setPen(QColor(220, 220, 220));
         painter.drawText(badgeRect, Qt::AlignCenter, m_diskUsage);
     }
 }

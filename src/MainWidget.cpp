@@ -7,34 +7,45 @@
 
 #include "widgets/VelixText.hpp"
 #include "widgets/VelixProgressBar.hpp"
+#include "Theme.hpp"
 
 MainWidget::MainWidget(QWidget* widget) : QWidget(widget)
 {
     auto mainLayout = new QVBoxLayout(this);
-    mainLayout->setContentsMargins(14, 10, 14, 14);
+    mainLayout->setContentsMargins(20, 14, 20, 14);
     mainLayout->setSpacing(10);
 
+    // ── Top bar: breadcrumb + Tweaks button (replaces the old big title) ──
     auto headerWidget = new QWidget(this);
+    headerWidget->setFixedHeight(36);
     auto headerLayout = new QHBoxLayout(headerWidget);
     headerLayout->setContentsMargins(0, 0, 0, 0);
+    headerLayout->setSpacing(8);
 
-    auto logoLabel = new VelixText{"VelixInstaller", this};
-    logoLabel->setPointSize(18);
+    auto* crumbRoot = new VelixText{"Velix", headerWidget};
+    crumbRoot->setFont(theme::uiFont(9));
+    crumbRoot->setTextColor(theme::text3);
+    headerLayout->addWidget(crumbRoot, 0, Qt::AlignVCenter);
 
-    auto subtitleLabel = new VelixText{"ENGINE PROJECT HUB", this};
-    subtitleLabel->setPointSize(9);
-    subtitleLabel->setBold(false);
-    subtitleLabel->setTextColor(QColor(170, 170, 170));
+    auto* crumbArrow = new VelixText{"›", headerWidget};
+    crumbArrow->setFont(theme::uiFont(11));
+    crumbArrow->setTextColor(theme::text3);
+    headerLayout->addWidget(crumbArrow, 0, Qt::AlignVCenter);
 
-    headerLayout->addWidget(logoLabel, 0, Qt::AlignLeft | Qt::AlignVCenter);
+    auto* crumbCurrent = new VelixText{"Home", headerWidget};
+    crumbCurrent->setFont(theme::uiFont(9, true));
+    crumbCurrent->setTextColor(theme::text);
+    crumbCurrent->setObjectName("breadcrumb-current");
+    headerLayout->addWidget(crumbCurrent, 0, Qt::AlignVCenter);
+
     headerLayout->addStretch(1);
-    headerLayout->addWidget(subtitleLabel, 0, Qt::AlignRight | Qt::AlignVCenter);
 
     mainLayout->addWidget(headerWidget);
 
     m_stackedWidget = new QStackedWidget(this);
     m_stackedWidget->setContentsMargins(0, 0, 0, 0);
 
+    m_homeWidget = new HomeWidget(m_stackedWidget);
     m_projectWidget = new ProjectsWidget(m_stackedWidget);
     m_installWidget = new InstallWidget(m_stackedWidget);
     m_settingsWidget = new SettingsWidget(m_stackedWidget);
@@ -44,6 +55,13 @@ MainWidget::MainWidget(QWidget* widget) : QWidget(widget)
 
     m_updateChecker = new AppUpdateChecker(this);
     m_updateWidget  = new UpdateWidget(m_updateChecker, m_stackedWidget);
+
+    connect(m_homeWidget, &HomeWidget::navigateRequested,
+            this, [this, crumbCurrent](const QString& tab)
+            {
+                changeWidget(tab);
+                crumbCurrent->setText(tab);
+            });
 
     connect(m_installWidget, &InstallWidget::installedVersionsChanged, m_settingsWidget, &SettingsWidget::reloadInstalledVersions);
 
@@ -62,6 +80,7 @@ MainWidget::MainWidget(QWidget* widget) : QWidget(widget)
     connect(m_updateChecker, &AppUpdateChecker::unstableUpdateAvailable,
             this, [this](const QString&, const QString&, const QString&){ emit updateAvailable(); });
 
+    m_stackedWidget->addWidget(m_homeWidget);
     m_stackedWidget->addWidget(m_installWidget);
     m_stackedWidget->addWidget(m_projectWidget);
     m_stackedWidget->addWidget(m_samplesWidget);
@@ -69,7 +88,7 @@ MainWidget::MainWidget(QWidget* widget) : QWidget(widget)
     m_stackedWidget->addWidget(m_documentationWidget);
     m_stackedWidget->addWidget(m_updateWidget);
 
-    m_stackedWidget->setCurrentWidget(m_projectWidget);
+    m_stackedWidget->setCurrentWidget(m_homeWidget);
 
     mainLayout->addWidget(m_stackedWidget);
 
@@ -140,9 +159,9 @@ void MainWidget::onDownloadEnded()
 
 void MainWidget::changeWidget(const QString& widgetName)
 {
-    //TODO Refactor this
-    const static QMap<QString, QWidget*> widgets
+    const QMap<QString, QWidget*> widgets
     {
+        {"Home",          m_homeWidget},
         {"Projects",      m_projectWidget},
         {"Samples",       m_samplesWidget},
         {"Installs",      m_installWidget},
@@ -153,8 +172,14 @@ void MainWidget::changeWidget(const QString& widgetName)
 
     auto it = widgets.find(widgetName);
 
-    if(it != widgets.end())
+    if (it != widgets.end())
+    {
         m_stackedWidget->setCurrentWidget(it.value());
+        if (auto* crumb = findChild<VelixText*>("breadcrumb-current"))
+            crumb->setText(widgetName);
+        if (widgetName == "Home" && m_homeWidget)
+            m_homeWidget->refresh();
+    }
     else
         qDebug() << "Could not find " << widgetName;
 }

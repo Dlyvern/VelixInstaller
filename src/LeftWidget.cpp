@@ -1,19 +1,52 @@
 #include "LeftWidget.hpp"
 #include <QPainter>
 #include <QPainterPath>
+#include <QHBoxLayout>
 #include <QDebug>
 
 #include "FireLogoWidget.hpp"
+#include "widgets/VelixText.hpp"
+#include "Theme.hpp"
 
 LeftWidget::LeftWidget(QWidget* parent) : QWidget(parent)
 {
     m_mainLayout = new QVBoxLayout(this);
-    m_mainLayout->setSpacing(6);
-    m_mainLayout->setContentsMargins(QMargins(10, 12, 10, 12));
+    m_mainLayout->setSpacing(2);
+    m_mainLayout->setContentsMargins(QMargins(12, 14, 12, 14));
 
-    auto* logoWidget = new FireLogoWidget(this);
-    m_mainLayout->addWidget(logoWidget, 0, Qt::AlignCenter);
+    // ── Brand block: flame + "Velix / Installer 1.3.1" ───────────────────
+    auto* brand = new QWidget(this);
+    auto* brandLayout = new QHBoxLayout(brand);
+    brandLayout->setContentsMargins(6, 4, 6, 14);
+    brandLayout->setSpacing(10);
 
+    auto* logoWidget = new FireLogoWidget(brand);
+    brandLayout->addWidget(logoWidget, 0, Qt::AlignVCenter);
+
+    auto* brandText = new QWidget(brand);
+    auto* brandTextLayout = new QVBoxLayout(brandText);
+    brandTextLayout->setContentsMargins(0, 0, 0, 0);
+    brandTextLayout->setSpacing(1);
+
+    auto* nameLbl = new VelixText("Velix", brandText);
+    nameLbl->setPointSize(11);
+    nameLbl->setBold(true);
+    nameLbl->setTextColor(theme::text);
+
+    auto* subLbl = new VelixText("Installer 1.3.1", brandText);
+    subLbl->setPointSize(8);
+    subLbl->setBold(false);
+    subLbl->setTextColor(theme::text3);
+    subLbl->setFont(theme::monoFont(8));
+
+    brandTextLayout->addWidget(nameLbl);
+    brandTextLayout->addWidget(subLbl);
+
+    brandLayout->addWidget(brandText, 1, Qt::AlignVCenter);
+
+    m_mainLayout->addWidget(brand);
+
+    addTab("Home",          ":home",                     this);
     addTab("Projects",      "./resources/folder.png",    this);
     addTab("Samples",       "./resources/cloud.png",     this);
     addTab("Documentation", "./resources/document.png",  this);
@@ -40,17 +73,12 @@ void LeftWidget::paintEvent(QPaintEvent* event)
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing);
 
-    const QRectF bounds = rect().adjusted(1, 1, -1, -1);
-    QPainterPath path;
-    path.addRoundedRect(bounds, 14, 14);
+    // Flat sidebar — slightly darker than the page background.
+    painter.fillRect(rect(), theme::withAlpha(theme::bg0, 130));
 
-    QLinearGradient gradient(bounds.topLeft(), bounds.bottomLeft());
-    gradient.setColorAt(0.0, QColor(44, 44, 44, 220));
-    gradient.setColorAt(1.0, QColor(31, 31, 31, 220));
-
-    painter.fillPath(path, gradient);
-    painter.setPen(QPen(QColor(64, 64, 64), 1));
-    painter.drawPath(path);
+    // 1px right border to separate from main content area.
+    painter.setPen(QPen(theme::border, 1));
+    painter.drawLine(width() - 1, 0, width() - 1, height());
 }
 
 void LeftWidget::addTab(const QString& tabName, const QString& iconPath, QWidget* parent)
@@ -64,7 +92,6 @@ void LeftWidget::addTab(const QString& tabName, const QString& iconPath, QWidget
 
         tab->setActive(true);
 
-        //TODO REFACTOR THIS PIECE OF SHIT
         emit tabWidgetChanged(tabName);
     });
 
